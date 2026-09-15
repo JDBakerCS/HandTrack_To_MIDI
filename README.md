@@ -31,6 +31,25 @@ follow:
 - Orange: ring finger
 - Pink: pinky finger
 
+### Harmony preview
+
+`HarmonyPreview.py` prints chord notes and automatic inversions without opening
+the camera or a MIDI port. Its default progression is I-IV-V7-I in C major:
+
+```powershell
+python HarmonyPreview.py
+```
+
+Use `DEGREE:TYPE` steps to review another progression. Supported chord types are
+`major`, `minor`, and `dominant7`:
+
+```powershell
+python HarmonyPreview.py --tonic D --progression 1:major,6:minor,4:major,5:dominant7
+```
+
+Compare close and open spacing with `--voicing close` or `--voicing open`. The
+preview shows both note names and raw MIDI note numbers for human review.
+
 ## 1. Product idea
 
 Use two hands in front of a webcam to control musical chords and sound effects.
@@ -95,7 +114,34 @@ An open music decision is whether “major/minor” should freely override the
 quality of every scale degree, or whether the application should enforce normal
 diatonic harmony for the selected key and scale.
 
-## 6. Two-hand control model
+## 6. Musical intent and voicing model
+
+Hand gestures should describe musical intent instead of directly encoding every
+MIDI note. The first internal representation will be a `ChordIntent` containing:
+
+- Key and scale
+- Scale degree I through VII
+- Chord quality, initially major or minor
+- Optional extension, such as a dominant seventh
+- Inversion preference
+- Register and voicing style
+- Performance values such as intensity and articulation
+
+The voicing engine will convert that intent into concrete MIDI note numbers. It
+will be responsible for:
+
+- Finding the chord root from the selected key and scale degree
+- Building major, minor, and later extended chord formulas
+- Applying root position, first inversion, or second inversion
+- Keeping notes inside a configured playable range
+- Producing close, open, and later instrument-specific voicings
+- Choosing a nearby inversion when automatic voice leading is enabled
+
+The initial harmony branch will implement and test this layer without opening a
+camera or MIDI port. Gesture and MIDI integration will happen only after the
+musical output is verified independently.
+
+## 7. Two-hand control model
 
 ### Selector hand
 
@@ -117,7 +163,7 @@ Start with a small set of mappings:
 All continuous values should be smoothed and rate-limited before MIDI CC
 messages are sent.
 
-## 7. Technical approach
+## 8. Technical approach
 
 1. Extend hand tracking from one hand to two hands.
 2. Use MediaPipe raw landmarks to recognize custom poses rather than relying
@@ -127,8 +173,10 @@ messages are sent.
 4. Keep the existing continuous MIDI script as a reference while building the
    new controller.
 5. Use the loopMIDI port name supplied by the user, currently `Port1 1`.
+6. Pass recognized gestures into `ChordIntent` rather than constructing MIDI
+   messages inside the camera loop.
 
-## 8. Milestones
+## 9. Milestones
 
 ### Milestone 1: Gesture display
 
@@ -139,10 +187,12 @@ messages are sent.
 
 ### Milestone 2: Chord output
 
-- Start with C major and I through IV.
+- Build and test `ChordIntent` and the voicing engine first.
+- Start with C major and all seven scale degrees.
+- Support major/minor triads, inversions, register limits, and close voicing.
+- Add automatic nearest-inversion voice leading.
 - Send note-on and note-off messages to the virtual MIDI port.
 - Confirm the chords in a DAW or MIDI monitor.
-- Add V through VII after the basic mapping is stable.
 
 ### Milestone 3: Expression control
 
@@ -157,7 +207,7 @@ messages are sent.
 - Move musical and MIDI settings into a configuration file.
 - Add a panic/stop control and robust cleanup.
 
-## 9. Acceptance criteria for the first usable prototype
+## 10. Acceptance criteria for the first usable prototype
 
 - The app detects two hands without confusing the selector and expression hand.
 - Each gesture remains stable when held naturally for a short period.
@@ -167,7 +217,7 @@ messages are sent.
 - Moving the expression hand changes at least one effect smoothly.
 - Pressing `q` or Escape closes the camera and MIDI connection safely.
 
-## 10. Risks and open questions
+## 11. Risks and open questions
 
 - Camera angle and hand rotation may make up/down classification unreliable.
 - The Vulcan signal must be distinguished from an open hand by its finger gaps.
