@@ -35,6 +35,22 @@ HAND_COLORS = {
     "Unknown": (220, 220, 220),
 }
 
+# OpenCV colors use blue-green-red order. Each anatomical group receives one
+# color so finger geometry remains readable even when two hands overlap.
+LANDMARK_GROUPS = (
+    ("Wrist", (0,), (255, 255, 255)),
+    ("Thumb", (1, 2, 3, 4), (255, 80, 255)),
+    ("Index", (5, 6, 7, 8), (80, 255, 80)),
+    ("Middle", (9, 10, 11, 12), (255, 255, 80)),
+    ("Ring", (13, 14, 15, 16), (80, 170, 255)),
+    ("Pinky", (17, 18, 19, 20), (255, 100, 120)),
+)
+LANDMARK_COLORS = {
+    landmark_index: color
+    for _, landmark_indices, color in LANDMARK_GROUPS
+    for landmark_index in landmark_indices
+}
+
 
 # --- Command-line configuration -------------------------------------------
 
@@ -84,8 +100,8 @@ def draw_hand(frame, landmarks: Sequence, hand_name: str) -> None:
 
     for start, end in HAND_CONNECTIONS:
         cv2.line(frame, points[start], points[end], color, 2)
-    # Draw every one of MediaPipe's 21 landmarks. Knuckles and finger joints
-    # use small nodes, while the wrist and fingertips remain easy to spot.
+    # Draw every one of MediaPipe's 21 landmarks. Anatomical colors identify
+    # each finger; node size distinguishes joints from the wrist and fingertips.
     for index, point in enumerate(points):
         if index in FINGERTIP_INDICES:
             radius = 7
@@ -93,7 +109,8 @@ def draw_hand(frame, landmarks: Sequence, hand_name: str) -> None:
             radius = 6
         else:
             radius = 4
-        cv2.circle(frame, point, radius, color, -1)
+        cv2.circle(frame, point, radius, LANDMARK_COLORS[index], -1)
+        cv2.circle(frame, point, radius, (25, 25, 25), 1)
 
 
 def _finger_summary(analysis: PoseAnalysis) -> str:
@@ -111,7 +128,7 @@ def _finger_summary(analysis: PoseAnalysis) -> str:
 
 def draw_status_panel(frame, status_lines: Sequence[str]) -> None:
     # A dark backing rectangle keeps labels readable over a bright camera feed.
-    panel_height = 45 + 28 * len(status_lines)
+    panel_height = 72 + 28 * len(status_lines)
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, 0), (frame.shape[1], panel_height), (20, 20, 20), -1)
     cv2.addWeighted(overlay, 0.72, frame, 0.28, 0.0, frame)
@@ -125,11 +142,31 @@ def draw_status_panel(frame, status_lines: Sequence[str]) -> None:
         (255, 255, 255),
         2,
     )
+
+    # The compact legend uses the same colors as the landmark nodes.
+    legend_x = 16
+    legend_y = 52
+    for label, _, color in LANDMARK_GROUPS:
+        cv2.circle(frame, (legend_x, legend_y - 5), 5, color, -1)
+        cv2.putText(
+            frame,
+            label,
+            (legend_x + 10, legend_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (230, 230, 230),
+            1,
+        )
+        label_width = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1
+        )[0][0]
+        legend_x += label_width + 27
+
     for row, status_line in enumerate(status_lines, start=1):
         cv2.putText(
             frame,
             status_line,
-            (12, 28 + row * 28),
+            (12, 52 + row * 28),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.58,
             (230, 230, 230),
