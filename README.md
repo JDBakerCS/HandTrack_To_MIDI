@@ -31,6 +31,25 @@ follow:
 - Orange: ring finger
 - Pink: pinky finger
 
+### Harmony preview
+
+`HarmonyPreview.py` prints chord notes and automatic inversions without opening
+the camera or a MIDI port. Its default progression is I-IV-V7-I in C major:
+
+```powershell
+python HarmonyPreview.py
+```
+
+Use `DEGREE:TYPE` steps to review another progression. Supported chord types are
+`major`, `minor`, and `dominant7`:
+
+```powershell
+python HarmonyPreview.py --tonic D --progression 1:major,6:minor,4:major,5:dominant7
+```
+
+Compare close and open spacing with `--voicing close` or `--voicing open`. The
+preview shows both note names and raw MIDI note numbers for human review.
+
 ## 1. Product idea
 
 Use two hands in front of a webcam to control musical chords and sound effects.
