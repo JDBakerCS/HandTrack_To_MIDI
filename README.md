@@ -2,11 +2,11 @@
 
 Status: Draft
 
-## Development preview
+## Development preview and performance mode
 
-Milestone 1 is implemented in `HandChordGestures.py`. It detects up to two hands,
-classifies the custom I-VII major/minor poses, and displays raw and stabilized
-results over the camera feed. It does not send MIDI notes yet.
+Milestones 1 and 2 are implemented in `HandChordGestures.py`. It detects up to
+two hands, classifies the custom I-VII major/minor poses, displays raw and
+stabilized results, and can send voiced MIDI chords from one selector hand.
 
 Run the preview from the activated virtual environment:
 
@@ -21,6 +21,9 @@ or a lower confidence threshold while collecting observations:
 python HandChordGestures.py --hold-seconds 0.4 --min-confidence 0.55
 ```
 
+Omitting `--port` always keeps this visual-only mode, making it useful for
+gesture tuning without producing notes.
+
 The preview color-codes all 21 hand landmarks so joint movement is easier to
 follow:
 
@@ -30,6 +33,49 @@ follow:
 - Cyan: middle finger
 - Orange: ring finger
 - Pink: pinky finger
+
+### MIDI chord performance
+
+Before starting the camera application:
+
+1. Open loopMIDI, create `Port1`, and leave loopMIDI running.
+2. Start LMMS after the port exists and leave its MIDI interface on `WinMM MIDI`.
+3. Add an instrument such as TripleOscillator to the Song Editor.
+4. On that instrument track, select `MIDI -> Input -> Port1`.
+5. Click the instrument's on-screen piano once to confirm LMMS audio works.
+
+Start C-major chord performance with the right hand as the selector:
+
+```powershell
+python HandChordGestures.py --port Port1
+```
+
+The friendly `Port1` name also matches the numbered name, such as `Port1 1`,
+that Mido reports on Windows. Use the left hand as the selector when preferred:
+
+```powershell
+python HandChordGestures.py --port Port1 --selector-hand Left
+```
+
+The other detected hand is labeled `expression` and does not send notes yet.
+That separation prevents the future effects hand from accidentally selecting a
+second chord.
+
+Add a dominant seventh to the major V gesture or try open voicings:
+
+```powershell
+python HandChordGestures.py --port Port1 --dominant-seven
+python HandChordGestures.py --port Port1 --voicing open
+```
+
+A held stable pose sends one chord onset. Changing the stable pose releases the
+old notes before starting the new chord. Removing the selector hand releases
+the chord after the configured hold period. Pressing `q` or Escape releases the
+active notes and sends MIDI all-notes-off before closing the port.
+
+If LMMS receives no notes, confirm that `Port1` is visible in loopMIDI, restart
+LMMS after creating the port, and reselect `MIDI -> Input -> Port1` on the
+instrument track.
 
 ### Harmony preview
 
@@ -172,7 +218,8 @@ messages are sent.
    MIDI output, and configuration responsibilities.
 4. Keep the existing continuous MIDI script as a reference while building the
    new controller.
-5. Use the loopMIDI port name supplied by the user, currently `Port1 1`.
+5. Use the loopMIDI port name supplied by the user, accepting both `Port1` and
+   Mido's numbered form such as `Port1 1`.
 6. Pass recognized gestures into `ChordIntent` rather than constructing MIDI
    messages inside the camera loop.
 
@@ -186,6 +233,8 @@ messages are sent.
 - Do not send MIDI notes yet.
 
 ### Milestone 2: Chord output
+
+Implementation complete; awaiting camera-and-LMMS musical validation.
 
 - Build and test `ChordIntent` and the voicing engine first.
 - Start with C major and all seven scale degrees.
