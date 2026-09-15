@@ -21,6 +21,16 @@ or a lower confidence threshold while collecting observations:
 python HandChordGestures.py --hold-seconds 0.4 --min-confidence 0.55
 ```
 
+The preview color-codes all 21 hand landmarks so joint movement is easier to
+follow:
+
+- White: wrist
+- Magenta: thumb
+- Green: index finger
+- Cyan: middle finger
+- Orange: ring finger
+- Pink: pinky finger
+
 ## 1. Product idea
 
 Use two hands in front of a webcam to control musical chords and sound effects.
