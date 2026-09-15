@@ -2,6 +2,25 @@
 
 Status: Draft
 
+## Development preview
+
+Milestone 1 is implemented in `HandChordGestures.py`. It detects up to two hands,
+classifies the custom I-VII major/minor poses, and displays raw and stabilized
+results over the camera feed. It does not send MIDI notes yet.
+
+Run the preview from the activated virtual environment:
+
+```powershell
+python HandChordGestures.py
+```
+
+Press `q` or Escape to close it. If recognition flickers, try a longer hold time
+or a lower confidence threshold while collecting observations:
+
+```powershell
+python HandChordGestures.py --hold-seconds 0.4 --min-confidence 0.55
+```
+
 ## 1. Product idea
 
 Use two hands in front of a webcam to control musical chords and sound effects.
