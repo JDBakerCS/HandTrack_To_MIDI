@@ -1,7 +1,9 @@
 """Camera-free tests for chord intent and deterministic chord construction."""
 
 import unittest
+from argparse import ArgumentTypeError
 
+from HarmonyPreview import DEFAULT_PROGRESSION, parse_progression
 from harmony_engine import (
     ChordIntent,
     VoicingEngine,
@@ -128,6 +130,20 @@ class VoicingEngineTests(unittest.TestCase):
         engine.reset()
         notes = engine.voice(ChordIntent(degree=4, inversion=None))
         self.assertEqual((65, 69, 72), notes)
+
+
+# --- Terminal preview input tests -----------------------------------------
+
+
+class HarmonyPreviewTests(unittest.TestCase):
+    def test_default_progression_parses_expected_steps(self) -> None:
+        steps = parse_progression(DEFAULT_PROGRESSION)
+        self.assertEqual((1, 4, 5, 1), tuple(step.degree for step in steps))
+        self.assertEqual("dominant7", steps[2].chord_type)
+
+    def test_invalid_progression_is_rejected(self) -> None:
+        with self.assertRaises(ArgumentTypeError):
+            parse_progression("8:major")
 
 
 if __name__ == "__main__":
