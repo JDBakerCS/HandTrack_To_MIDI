@@ -4,11 +4,13 @@ import unittest
 
 from harmony_engine import (
     ChordIntent,
+    VoicingEngine,
     build_chord,
     chord_root,
     format_chord,
     midi_note_name,
     note_to_midi,
+    voice_leading_distance,
 )
 
 
@@ -84,6 +86,48 @@ class ChordIntentValidationTests(unittest.TestCase):
     def test_inversion_must_exist_for_the_chord(self) -> None:
         with self.assertRaises(ValueError):
             ChordIntent(inversion=3)
+
+
+# --- Stateful voicing and voice-leading tests -----------------------------
+
+
+class VoicingEngineTests(unittest.TestCase):
+    def test_first_automatic_chord_starts_in_root_position(self) -> None:
+        engine = VoicingEngine()
+        notes = engine.voice(ChordIntent(inversion=None))
+        self.assertEqual((60, 64, 67), notes)
+
+    def test_automatic_inversion_minimizes_voice_movement(self) -> None:
+        engine = VoicingEngine()
+        c_major = engine.voice(ChordIntent(degree=1, inversion=None))
+        f_major = engine.voice(ChordIntent(degree=4, inversion=None))
+        self.assertEqual((60, 64, 67), c_major)
+        self.assertEqual((60, 65, 69), f_major)
+        self.assertEqual(3, voice_leading_distance(c_major, f_major))
+
+    def test_explicit_inversion_is_preserved(self) -> None:
+        engine = VoicingEngine()
+        notes = engine.voice(ChordIntent(inversion=1))
+        self.assertEqual((64, 67, 72), notes)
+
+    def test_engine_keeps_notes_inside_its_configured_range(self) -> None:
+        engine = VoicingEngine(lowest_note=48, highest_note=72)
+        notes = engine.voice(ChordIntent(degree=7, quality="minor", inversion=None))
+        self.assertGreaterEqual(min(notes), 48)
+        self.assertLessEqual(max(notes), 72)
+
+    def test_impossibly_narrow_range_is_rejected_when_voicing(self) -> None:
+        engine = VoicingEngine(lowest_note=60, highest_note=65)
+        with self.assertRaises(ValueError):
+            engine.voice(ChordIntent())
+
+    def test_reset_returns_automatic_voicing_to_root_position(self) -> None:
+        engine = VoicingEngine()
+        engine.voice(ChordIntent(degree=1, inversion=None))
+        engine.voice(ChordIntent(degree=4, inversion=None))
+        engine.reset()
+        notes = engine.voice(ChordIntent(degree=4, inversion=None))
+        self.assertEqual((65, 69, 72), notes)
 
 
 if __name__ == "__main__":

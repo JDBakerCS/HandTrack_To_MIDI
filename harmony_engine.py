@@ -6,8 +6,8 @@ MediaPipe, Mido, or synthesizer dependencies, which keeps the musical behavior
 fast and straightforward to test.
 """
 
-from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from dataclasses import dataclass, replace
+from typing import List, Optional, Sequence, Tuple
 
 
 # --- Musical vocabulary ----------------------------------------------------
@@ -190,3 +190,117 @@ def format_chord(notes: Sequence[int]) -> str:
     """Format MIDI notes for terminal output and human musical review."""
 
     return " - ".join(midi_note_name(note) for note in notes)
+
+
+# --- Register management and automatic voice leading ----------------------
+
+
+def voice_leading_distance(
+    previous_notes: Sequence[int], candidate_notes: Sequence[int]
+) -> int:
+    """Score movement between two voicings; lower values move less."""
+
+    if not previous_notes:
+        return 0
+
+    previous = tuple(sorted(previous_notes))
+    candidate = tuple(sorted(candidate_notes))
+    if len(previous) == len(candidate):
+        return sum(
+            abs(previous_note - candidate_note)
+            for previous_note, candidate_note in zip(previous, candidate)
+        )
+
+    # When an extension changes the number of voices, match every new voice to
+    # its nearest old voice and add a modest penalty for the changed density.
+    nearest_voice_movement = sum(
+        min(abs(candidate_note - previous_note) for previous_note in previous)
+        for candidate_note in candidate
+    )
+    return nearest_voice_movement + 6 * abs(len(previous) - len(candidate))
+
+
+def _octave_candidates(
+    notes: Sequence[int], lowest_note: int, highest_note: int
+) -> Tuple[Tuple[int, ...], ...]:
+    """Return whole-octave placements that fit inside the playable range."""
+
+    candidates: List[Tuple[int, ...]] = []
+    for octave_shift in range(-10, 11):
+        shifted = tuple(note + octave_shift * 12 for note in notes)
+        if min(shifted) >= lowest_note and max(shifted) <= highest_note:
+            candidates.append(shifted)
+    return tuple(candidates)
+
+
+class VoicingEngine:
+    """Resolve inversion and register while remembering the previous chord."""
+
+    def __init__(self, lowest_note: int = 36, highest_note: int = 96) -> None:
+        if not 0 <= lowest_note < highest_note <= 127:
+            raise ValueError("MIDI range must satisfy 0 <= lowest < highest <= 127")
+        self.lowest_note = lowest_note
+        self.highest_note = highest_note
+        self._previous_notes: Optional[Tuple[int, ...]] = None
+
+    @property
+    def previous_notes(self) -> Optional[Tuple[int, ...]]:
+        return self._previous_notes
+
+    def reset(self) -> None:
+        """Forget prior harmony so the next automatic chord starts in root position."""
+
+        self._previous_notes = None
+
+    def _candidate_voicings(self, intent: ChordIntent) -> Tuple[Tuple[int, ...], ...]:
+        voice_count = 4 if intent.extension == "dominant7" else 3
+        inversions = (
+            range(voice_count)
+            if intent.inversion is None
+            else (intent.inversion,)
+        )
+        candidates: List[Tuple[int, ...]] = []
+
+        for inversion in inversions:
+            close_intent = replace(intent, inversion=inversion)
+            base_notes = build_chord(close_intent)
+            candidates.extend(
+                _octave_candidates(base_notes, self.lowest_note, self.highest_note)
+            )
+
+        # Several paths can theoretically produce the same voicing. Removing
+        # duplicates makes tie-breaking deterministic and easier to inspect.
+        return tuple(sorted(set(candidates)))
+
+    def voice(self, intent: ChordIntent) -> Tuple[int, ...]:
+        """Return a playable voicing and remember it for the next chord."""
+
+        candidates = self._candidate_voicings(intent)
+        if not candidates:
+            raise ValueError("No chord voicing fits inside the configured MIDI range")
+
+        if self._previous_notes is None:
+            requested_inversion = intent.inversion if intent.inversion is not None else 0
+            requested_notes = build_chord(replace(intent, inversion=requested_inversion))
+            chosen = min(
+                candidates,
+                key=lambda notes: (
+                    sum(
+                        abs(candidate_note - requested_note)
+                        for candidate_note, requested_note in zip(notes, requested_notes)
+                    ),
+                    notes,
+                ),
+            )
+        else:
+            chosen = min(
+                candidates,
+                key=lambda notes: (
+                    voice_leading_distance(self._previous_notes or (), notes),
+                    max(notes) - min(notes),
+                    notes,
+                ),
+            )
+
+        self._previous_notes = chosen
+        return chosen
