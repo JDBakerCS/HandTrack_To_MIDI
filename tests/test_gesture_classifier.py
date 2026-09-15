@@ -78,17 +78,29 @@ def make_hand(
 class GestureClassifierTests(unittest.TestCase):
     def test_all_seven_degrees_in_both_qualities(self) -> None:
         pose_cases = (
-            (("index",), 1, False),
-            (("index", "middle"), 2, False),
-            (("index", "middle", "ring"), 3, False),
-            (("index", "middle", "ring", "pinky"), 4, False),
-            (("thumb", "index", "middle", "ring", "pinky"), 5, False),
-            (("index", "pinky"), 6, False),
-            (("thumb", "index", "middle", "ring", "pinky"), 7, True),
+            (("index",), 1, False, "Major", "Minor"),
+            (("index", "middle"), 2, False, "Major", "Minor"),
+            (("index", "middle", "ring"), 3, False, "Major", "Minor"),
+            (("index", "middle", "ring", "pinky"), 4, False, "Major", "Minor"),
+            (
+                ("thumb", "index", "middle", "ring", "pinky"),
+                5,
+                False,
+                "Major",
+                "Minor",
+            ),
+            (("index", "pinky"), 6, False, "Minor", "Major"),
+            (
+                ("thumb", "index", "middle", "ring", "pinky"),
+                7,
+                True,
+                "Major",
+                "Minor",
+            ),
         )
 
-        for fingers, degree, vulcan in pose_cases:
-            for direction, quality in (("up", "Major"), ("down", "Minor")):
+        for fingers, degree, vulcan, up_quality, down_quality in pose_cases:
+            for direction, quality in (("up", up_quality), ("down", down_quality)):
                 with self.subTest(degree=degree, quality=quality):
                     analysis = analyze_hand(make_hand(fingers, direction, vulcan))
                     self.assertIsNotNone(analysis.gesture)

@@ -262,10 +262,17 @@ def analyze_hand(landmarks: Sequence[Landmark]) -> PoseAnalysis:
         overall_confidence = (
             pattern_confidence + direction_confidence + gap_confidence
         ) / 3.0
+        # VI is intentionally inverted because vi is naturally minor in a
+        # major scale and the upward pose is more comfortable to hold.
+        if degree == 6:
+            quality = "Minor" if direction == "Up" else "Major"
+        else:
+            quality = "Major" if direction == "Up" else "Minor"
+
         gesture = ChordGesture(
             degree=degree,
             roman_numeral=ROMAN_NUMERALS[degree],
-            quality="Major" if direction == "Up" else "Minor",
+            quality=quality,
             pose_name=pose_name,
             confidence=round(overall_confidence, 2),
         )

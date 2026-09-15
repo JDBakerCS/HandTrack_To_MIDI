@@ -84,8 +84,16 @@ def draw_hand(frame, landmarks: Sequence, hand_name: str) -> None:
 
     for start, end in HAND_CONNECTIONS:
         cv2.line(frame, points[start], points[end], color, 2)
-    for index in FINGERTIP_INDICES:
-        cv2.circle(frame, points[index], 7, color, -1)
+    # Draw every one of MediaPipe's 21 landmarks. Knuckles and finger joints
+    # use small nodes, while the wrist and fingertips remain easy to spot.
+    for index, point in enumerate(points):
+        if index in FINGERTIP_INDICES:
+            radius = 7
+        elif index == 0:
+            radius = 6
+        else:
+            radius = 4
+        cv2.circle(frame, point, radius, color, -1)
 
 
 def _finger_summary(analysis: PoseAnalysis) -> str:

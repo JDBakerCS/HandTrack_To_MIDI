@@ -60,12 +60,14 @@ tucked for poses where it is not part of the pattern.
 | III | Index, middle, and ring pointing up | Same fingers pointing down |
 | IV | Four fingers pointing up | Four fingers pointing down |
 | V | Open hand pointing up | Open hand pointing down |
-| VI | Index and pinky pointing up | Index and pinky pointing down |
+| VI | Index and pinky pointing down | Index and pinky pointing up |
 | VII | Vulcan hand signal pointing up | Vulcan hand signal pointing down |
 
 For this document, “up” and “down” mean the direction of the fingertips in the
 camera image. This can be revised if palm orientation proves more natural or
-reliable.
+reliable. VI intentionally reverses the usual direction rule: pointing up is
+minor and pointing down is major because vi is naturally minor in a major scale
+and the upward gesture is easier to perform.
 
 ## 5. Musical behavior
 
