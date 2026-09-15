@@ -2,6 +2,35 @@
 
 Status: Draft
 
+## Development preview
+
+Milestone 1 is implemented in `HandChordGestures.py`. It detects up to two hands,
+classifies the custom I-VII major/minor poses, and displays raw and stabilized
+results over the camera feed. It does not send MIDI notes yet.
+
+Run the preview from the activated virtual environment:
+
+```powershell
+python HandChordGestures.py
+```
+
+Press `q` or Escape to close it. If recognition flickers, try a longer hold time
+or a lower confidence threshold while collecting observations:
+
+```powershell
+python HandChordGestures.py --hold-seconds 0.4 --min-confidence 0.55
+```
+
+The preview color-codes all 21 hand landmarks so joint movement is easier to
+follow:
+
+- White: wrist
+- Magenta: thumb
+- Green: index finger
+- Cyan: middle finger
+- Orange: ring finger
+- Pink: pinky finger
+
 ## 1. Product idea
 
 Use two hands in front of a webcam to control musical chords and sound effects.
@@ -41,12 +70,14 @@ tucked for poses where it is not part of the pattern.
 | III | Index, middle, and ring pointing up | Same fingers pointing down |
 | IV | Four fingers pointing up | Four fingers pointing down |
 | V | Open hand pointing up | Open hand pointing down |
-| VI | Index and pinky pointing up | Index and pinky pointing down |
+| VI | Index and pinky pointing down | Index and pinky pointing up |
 | VII | Vulcan hand signal pointing up | Vulcan hand signal pointing down |
 
 For this document, “up” and “down” mean the direction of the fingertips in the
 camera image. This can be revised if palm orientation proves more natural or
-reliable.
+reliable. VI intentionally reverses the usual direction rule: pointing up is
+minor and pointing down is major because vi is naturally minor in a major scale
+and the upward gesture is easier to perform.
 
 ## 5. Musical behavior
 
