@@ -1,91 +1,148 @@
-# Hand Track to MIDI CC
+# Hand Gesture Music Controller
 
-This script uses live footage from a webcam to track the user's hand and converts the solved node positions into MIDI control signals (MIDI CC) for the purposes of creating and influencing audio effects.
+Status: Draft
 
-It's made in Python and uses OpenCV for hand tracking through Google's `mediapipe` library.  The `mido` library is used for MIDI signal generation.  Connect to your preferred audio software using a virtual MIDI cable (e.g., LoopMIDI).
+## 1. Product idea
 
-### **Figure 1:** Example Use (see the full [demonstration video](https://youtu.be/Xb88uwkwUaE))
+Use two hands in front of a webcam to control musical chords and sound effects.
+One hand selects a scale degree and chord quality. The other hand provides
+continuous expressive control for effects such as filters, reverb, delay, and
+pan.
 
-![FL example](1_FL.png)
+The project starts from the HandTrack_To_MIDI Python application and its
+MediaPipe, OpenCV, Mido, and virtual-MIDI workflow.
 
-Note that, while I use a paid version of FL Studio, it is the only software that appears in the video which is not free.  And even then, the free version of FL Studio is (to the best of my knowledge) useable with this script.  Either way,  Vital was the primary sound source and is available to use with the creation of a free account.
+## 2. Goals
 
-## Quick Start
+- Select seven scale-degree chords with recognizable hand poses.
+- Select major or minor using the direction of the gesture.
+- Send reliable MIDI note messages for the selected chord.
+- Use the second hand for smooth, expressive MIDI CC messages.
+- Provide clear on-screen feedback about the detected gesture and active chord.
+- Keep key, scale, octave, MIDI channel, port, and CC mappings configurable.
 
-### 1. Prerequisites
-- **Python 3.9 or newer**
-- **Virtual MIDI Cable**: [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) (Windows) or IAC Driver (macOS)
-- **Webcam**
+## 3. Initial non-goals
 
-### 2. Installation
-```bash
-# Clone the repo
-git clone https://github.com/frkatona/HandTrack_To_MIDI.git
-cd HandTrack_To_MIDI
+- Training a custom machine-learning model in the first version.
+- Supporting rapid percussive note triggering.
+- Building a complete digital audio workstation or synthesizer.
+- Supporting more than two hands.
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+## 4. Gesture vocabulary
 
-# Install dependencies
-pip install -r requirements.txt
-```
+The selector hand uses extended-finger patterns. Fingers are assumed to be
+index, middle, ring, and pinky unless otherwise stated. The thumb should remain
+tucked for poses where it is not part of the pattern.
 
-### 3. Usage
+| Scale degree | Major gesture | Minor gesture |
+| --- | --- | --- |
+| I | Index pointing up | Index pointing down |
+| II | Index and middle pointing up | Index and middle pointing down |
+| III | Index, middle, and ring pointing up | Same fingers pointing down |
+| IV | Four fingers pointing up | Four fingers pointing down |
+| V | Open hand pointing up | Open hand pointing down |
+| VI | Index and pinky pointing up | Index and pinky pointing down |
+| VII | Vulcan hand signal pointing up | Vulcan hand signal pointing down |
 
-#### Option A: Continuous Tracking (Original)
-Maps wrist height (CC 1) and finger flexion (CC 2-6) to MIDI.
-```bash
-python HandTrackToMIDI.py --port "Your MIDI Port Name"
-```
+For this document, “up” and “down” mean the direction of the fingertips in the
+camera image. This can be revised if palm orientation proves more natural or
+reliable.
 
-#### Option B: Gesture-Based (New)
-Maps discrete gestures (Fist, Victory, etc.) to CC 2-8 with a 2-second decay.
-```bash
-python HandTrackGesturesToMIDI.py --port "Your MIDI Port Name"
-```
+## 5. Musical behavior
 
-Both commands use MIDI channel 1 and camera 0 by default. Use `--channel` or
-`--camera` to change them. Press `q` or Escape to quit.
+- Begin with a configurable key, using C major as the first test case.
+- Convert the selected scale degree into a chord using a configurable chord
+  formula and octave.
+- Initially support major and minor triads.
+- Add diminished, seventh, suspended, and extended chords later.
+- When the gesture changes, turn off the previous chord before turning on the
+  new chord.
+- Send an all-notes-off or equivalent cleanup message when the application
+  exits.
 
-![AK Hand Gesturing](3_HandGesture.png)
+An open music decision is whether “major/minor” should freely override the
+quality of every scale degree, or whether the application should enforce normal
+diatonic harmony for the selected key and scale.
 
-## Tips and Pitfalls
+## 6. Two-hand control model
 
-The system is free and relatively easy to create and use, but here are a few difficulties that may arise:
+### Selector hand
 
-- **LoopMIDI Port Naming Bug:** You will have to name your port in loopMIDI and use that same name in the code.  HOWEVER, for me, the port was created slightly different from how I typed it ("PythonMIDI 3" instead of "PythonMIDI").  I included a print statement to show the available ports, so be sure to check the terminal if the script fails before video capture initiates
+- Detect the hand’s identity and landmark positions.
+- Classify the finger pattern.
+- Classify fingertip direction as up or down.
+- Apply confidence, debounce, and hold-time rules before changing chords.
 
-- **Linking Tip:** I found it easiest use the `Multilink to Controllers` button (hotkey `ctrl + j`) in FL studio and tweaking a parameter's dial/fader while my hand was on-screen to initiate the link.  FL will detect the port and channel for the active input, and so only the CC number at the top of the 'Remote control settings' pop-up (Figure 2A, "Ctrl") will need adjusted to the desired finger based on the script.  Default control values are as follows:
+### Expression hand
 
-``` py
-(1) wrist - vertical position (raised hand = higher value)
-(2) index - flexion (flexed finger = higher value)
-(3) middle - flexion (same)
-(4) ring - flexion (same)
-(5) pinky - flexion (same)
-(6) thumb - flexion (same)
-```
+Start with a small set of mappings:
 
-### **Figure 2:** Remote Control Settings
+- Vertical position -> filter cutoff
+- Horizontal position -> pan
+- Finger spread or hand openness -> reverb/delay amount
+- Pinch distance -> effect intensity
+- Wrist rotation -> modulation rate
 
-![Remote Control Settings](2_RemoteControlSettings.png)
+All continuous values should be smoothed and rate-limited before MIDI CC
+messages are sent.
 
-- **Mapping Tip:** the CC value maps can be tailored to the desired sensitivity and range of the parameter you are controlling (e.g., maybe a filter sweep sounds desireable only across a small fraction of the possible CC values and so the small range of motion of a finger's bend would present a frustratingly narrow range of desireable change).  The mapping can be altered in the script relatively easily, but I found that FL's `Mapping formula` field (Figure 2B) allowed for an intuitive and responsive testing ground for appropriate CC values on each parameter.  There are many presets with example operations available in the drop-down, but I often used something simple like `Input - 0.5`, leveraging the automatic output clamping as represented by the adjacent plot (which updates when you press `enter`).  This `Input - 0.5` example would be useful if, for instance, I wanted the parameter to remain unactivated (at 0) unless the finger was very flexed and I also didn't want the parameter to ever reach beyond half of its range.
+## 7. Technical approach
 
-- **Smoothing Tip:** I found unsmoothed data to be acceptable in some contexts, but never preferable.  The script can be modified to include smoothing, but FL has a native smoothing function (Figure 2C) with a customizable time window that I found to be sufficient at around 15 ms (monitor the value in the `hint panel` at the top-left of the FL window while moving the slider).  Even with this additional delay, I felt the latency was noticeable, but far from prohibitive for CC control.
+1. Extend hand tracking from one hand to two hands.
+2. Use MediaPipe raw landmarks to recognize custom poses rather than relying
+   only on its built-in gesture names.
+3. Separate the application into vision, gesture classification, music mapping,
+   MIDI output, and configuration responsibilities.
+4. Keep the existing continuous MIDI script as a reference while building the
+   new controller.
+5. Use the loopMIDI port name supplied by the user, currently `Port1 1`.
 
-- **Recommended Parameters Tip:** I found slow attack and release parameters ideal for this system, with a mix of generator-specific and global parameters to keep changes fresh.  The 'input' wetness of a global delay or reverb coupled with the pre-amp drive and low-pass cutoff of a generator allowed for some satisfying momentary accenting/shaping.  An LFO-paired global lowpass (e.g., Fruity Love Filter's 'triangle low-pass' preset) mapped to the breadth of the wrist's vertical range made for some satisfying 'fade-in,' 'fade-out' swell, like a dramatic orchestra conductor, and stereo effects from the phaser settings allowed its wetness parameter to function similarly as a global ambience control.  Countering with pre-amp drive on the finger flexion allowed the synth to cut through.  I had high hopes, but low success, with pitch bending, but the addition of some quantize + note glide control could be effective.
+## 8. Milestones
 
-## Future Directions
+### Milestone 1: Gesture display
 
-I don't anticipate building on this much.  It's basically mediapipe and mido working as they were intended out of the box... not terribly creative on my part.  That said, I noted what I felt were some interesting possibilities for further development if ambition struck:
+- Detect two hands.
+- Recognize the I through VII poses.
+- Display the detected degree, quality, and confidence on the camera window.
+- Do not send MIDI notes yet.
 
-- My **metrics for signals** are somewhat imprecise and taxing. "Finger closedness" is calculated based on fingertip-to-wrist distance which is both (1) vulnerable to the hand's forward angle with the camera and (2) requires mapping to bridge the remaining gap for even a fully folded finger.  A different node association could be used, but that would still not be robust to angling (though perhaps the wrist angle could be feel natural as another dimension of control).  And the wrist's vertical position requires it to be raised uncomfortably high throughout my video.  Perhaps a secondary gesture could trigger a lock on the wrist position's influence?
+### Milestone 2: Chord output
 
-- **IRL Lighting Control** can easily [citation needed] be controlled through MIDI-out (i.e., sending MIDI from your computer to a connected device).  Perhaps the simplest case is triggering lighting on a MIDI controller with controllable LED pads like the Novation Launchkey 49 (e.g., MaddyGuthridge's [universal controller script](https://github.com/MaddyGuthridge/Universal-Controller-Script)).  With a MIDI-to-DMX interface (e.g., Entecc's [Open DMX USB interface](https://www.enttec.com/product/dmx-usb-interfaces/open-dmx-usb/)), this idea can scale into a complex, professional lighting setup (e.g., using FL's ZGE DMX controller as demonsted in [this video](https://youtu.be/rrQGiYoXmlo)).  I can envision clapping for blackouts, finger-pointing a spotlight to move corresponding direction, and a wrist flick for strobe effects with color, intensity, and speed mapped to horizontal resting position. The possibilities are endless, though obviously the cost of the hardware and the time spent implementing and troubleshooting are not.
+- Start with C major and I through IV.
+- Send note-on and note-off messages to the virtual MIDI port.
+- Confirm the chords in a DAW or MIDI monitor.
+- Add V through VII after the basic mapping is stable.
 
-- **Sending non-control data** like note-on/off messages.  Certainly any percussive or otherwise transient-heavy triggered audio would suffer from the latency of this method, but I can imagine perhaps a slow-attack pad feeling satisfying.  Alternatively, a simple trigger can be made to trigger a more complex orchestration of sounds and effects using FL's `Patcher` and `Key Mapper` plugins to generate multi-instrument chords, arpeggios, bass, etc. (as demonstrated [here](https://youtu.be/1eidT2TAIt8) for my FRK AutoChords Patcher preset).  Though not shown in the video, I can imagine using FL's quantization to force the imprecise timing on the the grid for a more polished sound for recording or live performance.  Speaking of which, FL's native 'Performance Mode' fit the bill nicely, perhaps using the CC values in 'latch trigger' mode, switching binary state beyond a certain threshold with some kind of 'de-bounce' logic.
+### Milestone 3: Expression control
 
-### to-do
- - get working with resolume
+- Assign one movement to one MIDI CC.
+- Add smoothing and a dead zone to reduce jitter.
+- Add the remaining effect mappings one at a time.
+
+### Milestone 4: Usability and configuration
+
+- Add calibration for camera position and hand size.
+- Add an on-screen status panel.
+- Move musical and MIDI settings into a configuration file.
+- Add a panic/stop control and robust cleanup.
+
+## 9. Acceptance criteria for the first usable prototype
+
+- The app detects two hands without confusing the selector and expression hand.
+- Each gesture remains stable when held naturally for a short period.
+- I through VII and major/minor are displayed correctly under normal lighting.
+- Changing gestures does not leave stuck MIDI notes.
+- A DAW or MIDI monitor receives the expected chord notes on `Port1 1`.
+- Moving the expression hand changes at least one effect smoothly.
+- Pressing `q` or Escape closes the camera and MIDI connection safely.
+
+## 10. Risks and open questions
+
+- Camera angle and hand rotation may make up/down classification unreliable.
+- The Vulcan signal must be distinguished from an open hand by its finger gaps.
+- Finger-count poses may be confused during transitions between chords.
+- The best representation for key changes and scales is still undecided.
+- Chord voicings, inversions, velocity, sustain, and quantization need musical
+  testing.
+- The project should eventually include a small test suite for pose-to-chord
+  mapping that does not require a webcam.
