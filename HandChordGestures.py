@@ -313,6 +313,63 @@ def draw_status_panel(
         )
 
 
+def draw_expression_meter(
+    frame,
+    *,
+    top: float,
+    bottom: float,
+    value: Optional[int],
+    control: int,
+) -> None:
+    """Draw the active vertical range and current expression value."""
+
+    frame_height, frame_width = frame.shape[:2]
+    top_y = round(top * frame_height)
+    bottom_y = round(bottom * frame_height)
+    meter_x = frame_width - 28
+
+    cv2.rectangle(
+        frame,
+        (meter_x - 8, top_y),
+        (meter_x + 8, bottom_y),
+        (25, 25, 25),
+        -1,
+    )
+    cv2.line(frame, (meter_x, top_y), (meter_x, bottom_y), (210, 210, 210), 2)
+    cv2.putText(
+        frame,
+        f"CC{control}",
+        (meter_x - 48, max(18, top_y - 8)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (255, 255, 255),
+        1,
+    )
+    cv2.putText(
+        frame,
+        "127",
+        (meter_x - 44, top_y + 5),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.4,
+        (210, 210, 210),
+        1,
+    )
+    cv2.putText(
+        frame,
+        "0",
+        (meter_x - 22, bottom_y + 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.4,
+        (210, 210, 210),
+        1,
+    )
+
+    if value is not None:
+        marker_y = round(bottom_y - (value / 127.0) * (bottom_y - top_y))
+        cv2.circle(frame, (meter_x, marker_y), 8, (80, 255, 255), -1)
+        cv2.circle(frame, (meter_x, marker_y), 8, (25, 25, 25), 1)
+
+
 def _hand_name(result, hand_index: int) -> str:
     if hand_index >= len(result.handedness) or not result.handedness[hand_index]:
         return f"Unknown-{hand_index + 1}"
@@ -492,6 +549,13 @@ def run(args: argparse.Namespace) -> int:
                 else:
                     heading = "Gesture preview - no MIDI notes are being sent"
                 draw_status_panel(frame, status_lines, heading)
+                draw_expression_meter(
+                    frame,
+                    top=args.expression_top,
+                    bottom=args.expression_bottom,
+                    value=expression_control.current_value,
+                    control=args.expression_cc,
+                )
                 cv2.imshow("Two-Hand Chord Gestures", frame)
 
                 key = cv2.waitKey(1) & 0xFF
