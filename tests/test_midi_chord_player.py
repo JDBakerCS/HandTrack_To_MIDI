@@ -74,6 +74,21 @@ class ChordMidiPlayerTests(unittest.TestCase):
         self.assertFalse(self.player.stop())
         self.assertEqual(["note_off"] * 3, [m.type for m in self.output.messages])
 
+    def test_control_change_uses_the_players_channel(self) -> None:
+        self.player.send_control_change(control=74, value=91)
+
+        message = self.output.messages[-1]
+        self.assertEqual("control_change", message.type)
+        self.assertEqual(1, message.channel)
+        self.assertEqual(74, message.control)
+        self.assertEqual(91, message.value)
+
+    def test_invalid_control_change_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            self.player.send_control_change(control=128, value=64)
+        with self.assertRaises(ValueError):
+            self.player.send_control_change(control=74, value=-1)
+
     def test_panic_sends_all_notes_off_control_change(self) -> None:
         self.player.play_chord((60, 64, 67))
         self.output.messages.clear()

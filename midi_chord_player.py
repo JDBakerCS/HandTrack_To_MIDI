@@ -154,6 +154,22 @@ class ChordMidiPlayer:
             )
         return True
 
+    def send_control_change(self, control: int, value: int) -> None:
+        """Send one validated continuous-controller value on this MIDI channel."""
+
+        if not 0 <= control <= 127:
+            raise ValueError("MIDI control number must be between 0 and 127")
+        if not 0 <= value <= 127:
+            raise ValueError("MIDI control value must be between 0 and 127")
+        self.output.send(
+            Message(
+                "control_change",
+                channel=self.channel,
+                control=control,
+                value=value,
+            )
+        )
+
     def panic(self) -> None:
         """Release tracked notes and request that the synth silence the channel."""
 
