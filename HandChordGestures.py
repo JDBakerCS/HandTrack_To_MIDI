@@ -76,14 +76,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hold-seconds",
         type=float,
-        default=0.25,
-        help="Seconds a pose must remain unchanged before it becomes stable",
+        default=0.15,
+        help="Seconds a pose must remain unchanged (default: 0.15)",
     )
     parser.add_argument(
         "--min-confidence",
         type=float,
-        default=0.65,
-        help="Minimum custom gesture confidence from 0.0 to 1.0",
+        default=0.55,
+        help="Minimum custom gesture confidence from 0.0 to 1.0 (default: 0.55)",
     )
     parser.add_argument(
         "--port",
