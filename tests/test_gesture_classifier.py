@@ -111,6 +111,16 @@ class GestureClassifierTests(unittest.TestCase):
         analysis = analyze_hand(make_hand(()))
         self.assertIsNone(analysis.gesture)
 
+    def test_degree_three_accepts_a_relaxed_extended_thumb(self) -> None:
+        analysis = analyze_hand(make_hand(("thumb", "index", "middle", "ring")))
+
+        self.assertEqual(
+            ("thumb", "index", "middle", "ring"), analysis.extended_fingers
+        )
+        self.assertIsNotNone(analysis.gesture)
+        self.assertEqual(3, analysis.gesture.degree)
+        self.assertEqual("Major", analysis.gesture.quality)
+
     def test_wrong_landmark_count_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             analyze_hand(make_hand(("index",))[:-1])

@@ -70,12 +70,14 @@ ROMAN_NUMERALS = {
     7: "VII",
 }
 
-# Exact extended-finger patterns for I-IV and VI. V and VII both use all five
-# fingers, so their middle/ring fingertip gap is checked separately below.
+# Exact extended-finger patterns for I-IV and VI. Degree III also accepts a
+# relaxed thumb because live testing showed the intended IMR pose as TIMR. V
+# and VII both use all five fingers, so their fingertip gap is checked below.
 POSE_PATTERNS = {
     ("index",): (1, "Index"),
     ("index", "middle"): (2, "Index + Middle"),
     ("index", "middle", "ring"): (3, "Three Fingers"),
+    ("thumb", "index", "middle", "ring"): (3, "Three Fingers"),
     ("index", "middle", "ring", "pinky"): (4, "Four Fingers"),
     ("index", "pinky"): (6, "Index + Pinky"),
 }
