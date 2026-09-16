@@ -13,6 +13,11 @@ from typing import Dict, Optional, Sequence, Set
 import cv2
 import mediapipe as mp
 
+from expression_controller import (
+    SmoothedMidiControl,
+    palm_vertical_position,
+    vertical_position_to_midi,
+)
 from gesture_classifier import (
     ChordGesture,
     GestureStabilizer,
@@ -109,6 +114,44 @@ def parse_args() -> argparse.Namespace:
         default="sideways",
         help="Direction used for minor gestures I-V and VII (default: sideways)",
     )
+    parser.add_argument(
+        "--expression-cc",
+        type=int,
+        choices=range(128),
+        default=74,
+        metavar="0-127",
+        help="MIDI CC controlled by expression-hand height (default: 74)",
+    )
+    parser.add_argument(
+        "--expression-smoothing",
+        type=float,
+        default=0.25,
+        help="Expression smoothing from 0 exclusive to 1 inclusive (default: 0.25)",
+    )
+    parser.add_argument(
+        "--expression-dead-zone",
+        type=int,
+        default=2,
+        help="Minimum MIDI-value change before sending expression (default: 2)",
+    )
+    parser.add_argument(
+        "--expression-rate",
+        type=float,
+        default=30.0,
+        help="Maximum expression CC messages per second (default: 30)",
+    )
+    parser.add_argument(
+        "--expression-top",
+        type=float,
+        default=0.15,
+        help="Top of the expression hand's active camera range (default: 0.15)",
+    )
+    parser.add_argument(
+        "--expression-bottom",
+        type=float,
+        default=0.85,
+        help="Bottom of the expression hand's active camera range (default: 0.85)",
+    )
     parser.add_argument("--tonic", default="C", help="Tonic note, such as C or F#")
     parser.add_argument(
         "--scale",
@@ -163,6 +206,17 @@ def parse_args() -> argparse.Namespace:
         parser.error("--min-confidence must be between 0.0 and 1.0")
     if not 0 <= args.lowest_note < args.highest_note <= 127:
         parser.error("MIDI range must satisfy 0 <= lowest-note < highest-note <= 127")
+    if not 0.0 < args.expression_smoothing <= 1.0:
+        parser.error("--expression-smoothing must be greater than 0 and at most 1")
+    if not 0 <= args.expression_dead_zone <= 127:
+        parser.error("--expression-dead-zone must be between 0 and 127")
+    if args.expression_rate <= 0.0:
+        parser.error("--expression-rate must be positive")
+    if not 0.0 <= args.expression_top < args.expression_bottom <= 1.0:
+        parser.error(
+            "Expression range must satisfy 0 <= expression-top "
+            "< expression-bottom <= 1"
+        )
     try:
         args.tonic = normalize_note_name(args.tonic)
     except ValueError as error:
@@ -259,6 +313,63 @@ def draw_status_panel(
         )
 
 
+def draw_expression_meter(
+    frame,
+    *,
+    top: float,
+    bottom: float,
+    value: Optional[int],
+    control: int,
+) -> None:
+    """Draw the active vertical range and current expression value."""
+
+    frame_height, frame_width = frame.shape[:2]
+    top_y = round(top * frame_height)
+    bottom_y = round(bottom * frame_height)
+    meter_x = frame_width - 28
+
+    cv2.rectangle(
+        frame,
+        (meter_x - 8, top_y),
+        (meter_x + 8, bottom_y),
+        (25, 25, 25),
+        -1,
+    )
+    cv2.line(frame, (meter_x, top_y), (meter_x, bottom_y), (210, 210, 210), 2)
+    cv2.putText(
+        frame,
+        f"CC{control}",
+        (meter_x - 48, max(18, top_y - 8)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (255, 255, 255),
+        1,
+    )
+    cv2.putText(
+        frame,
+        "127",
+        (meter_x - 44, top_y + 5),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.4,
+        (210, 210, 210),
+        1,
+    )
+    cv2.putText(
+        frame,
+        "0",
+        (meter_x - 22, bottom_y + 16),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.4,
+        (210, 210, 210),
+        1,
+    )
+
+    if value is not None:
+        marker_y = round(bottom_y - (value / 127.0) * (bottom_y - top_y))
+        cv2.circle(frame, (meter_x, marker_y), 8, (80, 255, 255), -1)
+        cv2.circle(frame, (meter_x, marker_y), 8, (25, 25, 25), 1)
+
+
 def _hand_name(result, hand_index: int) -> str:
     if hand_index >= len(result.handedness) or not result.handedness[hand_index]:
         return f"Unknown-{hand_index + 1}"
@@ -310,6 +421,12 @@ def run(args: argparse.Namespace) -> int:
         )
         stabilizers: Dict[str, GestureStabilizer] = {}
         voicing_engine = VoicingEngine(args.lowest_note, args.highest_note)
+        expression_control = SmoothedMidiControl(
+            smoothing=args.expression_smoothing,
+            dead_zone=args.expression_dead_zone,
+            max_rate_hz=args.expression_rate,
+        )
+        expression_hand = "Left" if args.selector_hand == "Right" else "Right"
         last_selector_key = None
         active_chord_text = "none"
         start_time = time.perf_counter()
@@ -342,30 +459,46 @@ def run(args: argparse.Namespace) -> int:
                 for hand_index, landmarks in enumerate(result.hand_landmarks):
                     hand_name = _hand_name(result, hand_index)
                     seen_hands.add(hand_name)
-                    stabilizer = stabilizers.setdefault(
-                        hand_name, GestureStabilizer(args.hold_seconds)
-                    )
-                    analysis = analyze_hand(
-                        landmarks, minor_direction=args.minor_direction
-                    )
-                    observation = analysis.gesture
-                    if (
-                        observation is not None
-                        and observation.confidence < args.min_confidence
-                    ):
-                        observation = None
-                    stable_gesture = stabilizer.update(observation, now)
-                    stable_gestures[hand_name] = stable_gesture
-
                     draw_hand(frame, landmarks, hand_name)
-                    hand_role = (
-                        "selector" if hand_name == args.selector_hand else "expression"
-                    )
-                    status_lines.append(
-                        f"{hand_name} [{hand_role}]: raw {_gesture_text(analysis)} | "
-                        f"stable {_stable_text(stable_gesture)} | "
-                        f"fingers {_finger_summary(analysis)} {analysis.direction}"
-                    )
+
+                    if hand_name == args.selector_hand:
+                        stabilizer = stabilizers.setdefault(
+                            hand_name, GestureStabilizer(args.hold_seconds)
+                        )
+                        analysis = analyze_hand(
+                            landmarks, minor_direction=args.minor_direction
+                        )
+                        observation = analysis.gesture
+                        if (
+                            observation is not None
+                            and observation.confidence < args.min_confidence
+                        ):
+                            observation = None
+                        stable_gesture = stabilizer.update(observation, now)
+                        stable_gestures[hand_name] = stable_gesture
+                        status_lines.append(
+                            f"{hand_name} [selector]: raw {_gesture_text(analysis)} | "
+                            f"stable {_stable_text(stable_gesture)} | "
+                            f"fingers {_finger_summary(analysis)} {analysis.direction}"
+                        )
+                    elif hand_name == expression_hand:
+                        palm_y = palm_vertical_position(landmarks)
+                        raw_value = vertical_position_to_midi(
+                            palm_y,
+                            top=args.expression_top,
+                            bottom=args.expression_bottom,
+                        )
+                        expression_value = expression_control.update(raw_value, now)
+                        if player is not None and expression_value is not None:
+                            player.send_control_change(
+                                args.expression_cc, expression_value
+                            )
+                        status_lines.append(
+                            f"{hand_name} [expression]: height {1.0 - palm_y:.0%} | "
+                            f"CC{args.expression_cc} {expression_control.current_value}"
+                        )
+                    else:
+                        status_lines.append(f"{hand_name} [unassigned]")
 
                 # Clear a hand's stable pose after it has been absent for the
                 # configured hold period, avoiding stale labels on re-entry.
@@ -410,11 +543,19 @@ def run(args: argparse.Namespace) -> int:
                 if player is not None:
                     status_lines.insert(0, f"Active chord: {active_chord_text}")
                     heading = (
-                        f"MIDI: {resolved_port} | selector: {args.selector_hand} hand"
+                        f"MIDI: {resolved_port} | chord: {args.selector_hand} | "
+                        f"CC{args.expression_cc}: {expression_hand}"
                     )
                 else:
                     heading = "Gesture preview - no MIDI notes are being sent"
                 draw_status_panel(frame, status_lines, heading)
+                draw_expression_meter(
+                    frame,
+                    top=args.expression_top,
+                    bottom=args.expression_bottom,
+                    value=expression_control.current_value,
+                    control=args.expression_cc,
+                )
                 cv2.imshow("Two-Hand Chord Gestures", frame)
 
                 key = cv2.waitKey(1) & 0xFF
