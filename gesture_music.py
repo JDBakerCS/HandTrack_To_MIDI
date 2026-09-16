@@ -20,6 +20,10 @@ SUPPORTED_SEVENTH_MODIFIERS = (
 )
 
 
+class InvalidChordModifierError(ValueError):
+    """Raised when a valid modifier conflicts with the selector-hand quality."""
+
+
 def chord_intent_from_gesture(
     gesture: ChordGesture,
     *,
@@ -52,7 +56,9 @@ def chord_intent_from_gesture(
         extension = "major7" if quality == "major" else "minor7"
     elif seventh_modifier == DOMINANT_SEVENTH_MODIFIER:
         if quality != "major":
-            raise ValueError("Dominant seventh modifier requires a major pose")
+            raise InvalidChordModifierError(
+                "Dominant seventh modifier requires a major pose"
+            )
         extension = "dominant7"
     else:
         extension = (

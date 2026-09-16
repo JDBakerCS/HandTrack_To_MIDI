@@ -13,6 +13,13 @@ from typing import Dict, Optional, Sequence, Set
 import cv2
 import mediapipe as mp
 
+from chord_modifier import (
+    DEFAULT_PINCH_ENGAGE_THRESHOLD,
+    DEFAULT_PINCH_RELEASE_THRESHOLD,
+    MODIFIER_LABELS,
+    PinchModifierStabilizer,
+    analyze_seventh_pinch,
+)
 from expression_controller import (
     SmoothedMidiControl,
     palm_vertical_position,
@@ -24,7 +31,7 @@ from gesture_classifier import (
     PoseAnalysis,
     analyze_hand,
 )
-from gesture_music import chord_intent_from_gesture
+from gesture_music import InvalidChordModifierError, chord_intent_from_gesture
 from harmony_engine import VoicingEngine, format_chord, normalize_note_name
 from midi_chord_player import ChordMidiPlayer, open_midi_output
 
@@ -152,6 +159,24 @@ def parse_args() -> argparse.Namespace:
         default=0.85,
         help="Bottom of the expression hand's active camera range (default: 0.85)",
     )
+    parser.add_argument(
+        "--modifier-hold-seconds",
+        type=float,
+        default=0.12,
+        help="Seconds a seventh pinch must remain stable (default: 0.12)",
+    )
+    parser.add_argument(
+        "--pinch-engage",
+        type=float,
+        default=DEFAULT_PINCH_ENGAGE_THRESHOLD,
+        help="Normalized distance that engages a seventh pinch (default: 0.30)",
+    )
+    parser.add_argument(
+        "--pinch-release",
+        type=float,
+        default=DEFAULT_PINCH_RELEASE_THRESHOLD,
+        help="Normalized distance that releases a seventh pinch (default: 0.45)",
+    )
     parser.add_argument("--tonic", default="C", help="Tonic note, such as C or F#")
     parser.add_argument(
         "--scale",
@@ -217,6 +242,10 @@ def parse_args() -> argparse.Namespace:
             "Expression range must satisfy 0 <= expression-top "
             "< expression-bottom <= 1"
         )
+    if args.modifier_hold_seconds < 0.0:
+        parser.error("--modifier-hold-seconds must be non-negative")
+    if not 0.0 < args.pinch_engage < args.pinch_release:
+        parser.error("Pinch thresholds must satisfy 0 < pinch-engage < pinch-release")
     try:
         args.tonic = normalize_note_name(args.tonic)
     except ValueError as error:
@@ -426,6 +455,9 @@ def run(args: argparse.Namespace) -> int:
             dead_zone=args.expression_dead_zone,
             max_rate_hz=args.expression_rate,
         )
+        modifier_stabilizer = PinchModifierStabilizer(
+            args.modifier_hold_seconds
+        )
         expression_hand = "Left" if args.selector_hand == "Right" else "Right"
         last_selector_key = None
         active_chord_text = "none"
@@ -455,6 +487,8 @@ def run(args: argparse.Namespace) -> int:
                 status_lines = []
                 seen_hands: Set[str] = set()
                 stable_gestures: Dict[str, Optional[ChordGesture]] = {}
+                stable_modifier = modifier_stabilizer.stable_modifier
+                modifier_warning = ""
 
                 for hand_index, landmarks in enumerate(result.hand_landmarks):
                     hand_name = _hand_name(result, hand_index)
@@ -493,9 +527,21 @@ def run(args: argparse.Namespace) -> int:
                             player.send_control_change(
                                 args.expression_cc, expression_value
                             )
+                        pinch_analysis = analyze_seventh_pinch(
+                            landmarks,
+                            active_modifier=stable_modifier,
+                            engage_threshold=args.pinch_engage,
+                            release_threshold=args.pinch_release,
+                        )
+                        stable_modifier = modifier_stabilizer.update(
+                            pinch_analysis.modifier, now
+                        )
                         status_lines.append(
-                            f"{hand_name} [expression]: height {1.0 - palm_y:.0%} | "
-                            f"CC{args.expression_cc} {expression_control.current_value}"
+                            f"{hand_name} [expression]: "
+                            f"CC{args.expression_cc} {expression_control.current_value} | "
+                            f"7th {MODIFIER_LABELS[stable_modifier]} | "
+                            f"pinch I {pinch_analysis.index_ratio:.2f} "
+                            f"M {pinch_analysis.middle_ratio:.2f}"
                         )
                     else:
                         status_lines.append(f"{hand_name} [unassigned]")
@@ -510,7 +556,11 @@ def run(args: argparse.Namespace) -> int:
                 # is converted to intent once, voiced once, and sent once.
                 selector_gesture = stable_gestures.get(args.selector_hand)
                 selector_key = (
-                    (selector_gesture.degree, selector_gesture.quality)
+                    (
+                        selector_gesture.degree,
+                        selector_gesture.quality,
+                        stable_modifier,
+                    )
                     if selector_gesture is not None
                     else None
                 )
@@ -521,27 +571,46 @@ def run(args: argparse.Namespace) -> int:
                         last_selector_key = None
                         active_chord_text = "none"
                     elif selector_key != last_selector_key:
-                        intent = chord_intent_from_gesture(
-                            selector_gesture,
-                            tonic=args.tonic,
-                            scale=args.scale,
-                            octave=args.octave,
-                            voicing_style=args.voicing,
-                            velocity=args.velocity,
-                            dominant_seventh=args.dominant_seven,
-                        )
-                        notes = voicing_engine.voice(intent)
-                        player.play_chord(notes, velocity=intent.velocity)
-                        last_selector_key = selector_key
-                        active_chord_text = (
-                            f"{selector_gesture.display_name}: {format_chord(notes)}"
-                        )
-                        print(f"Chord on: {active_chord_text} | MIDI {notes}")
+                        try:
+                            intent = chord_intent_from_gesture(
+                                selector_gesture,
+                                tonic=args.tonic,
+                                scale=args.scale,
+                                octave=args.octave,
+                                voicing_style=args.voicing,
+                                velocity=args.velocity,
+                                dominant_seventh=args.dominant_seven,
+                                seventh_modifier=stable_modifier,
+                            )
+                        except InvalidChordModifierError as error:
+                            # Keep the previous chord sounding until the player
+                            # releases the pinch or selects a compatible pose.
+                            modifier_warning = str(error)
+                        else:
+                            notes = voicing_engine.voice(intent)
+                            player.play_chord(notes, velocity=intent.velocity)
+                            last_selector_key = selector_key
+                            chord_type = {
+                                "major7": "Major 7",
+                                "minor7": "Minor 7",
+                                "dominant7": "Dominant 7",
+                            }.get(intent.extension, selector_gesture.quality)
+                            active_chord_text = (
+                                f"{selector_gesture.roman_numeral} {chord_type}: "
+                                f"{format_chord(notes)}"
+                            )
+                            print(f"Chord on: {active_chord_text} | MIDI {notes}")
 
                 if not status_lines:
                     status_lines.append("No hands detected")
                 if player is not None:
                     status_lines.insert(0, f"Active chord: {active_chord_text}")
+                    status_lines.insert(
+                        1,
+                        f"Seventh modifier: {MODIFIER_LABELS[stable_modifier]}",
+                    )
+                    if modifier_warning:
+                        status_lines.insert(2, f"Modifier warning: {modifier_warning}")
                     heading = (
                         f"MIDI: {resolved_port} | chord: {args.selector_hand} | "
                         f"CC{args.expression_cc}: {expression_hand}"
