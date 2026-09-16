@@ -103,6 +103,12 @@ def parse_args() -> argparse.Namespace:
         default="Right",
         help="Hand that selects chords; the other hand is reserved for expression",
     )
+    parser.add_argument(
+        "--minor-direction",
+        choices=("down", "sideways"),
+        default="sideways",
+        help="Direction used for minor gestures I-V and VII (default: sideways)",
+    )
     parser.add_argument("--tonic", default="C", help="Tonic note, such as C or F#")
     parser.add_argument(
         "--scale",
@@ -339,7 +345,9 @@ def run(args: argparse.Namespace) -> int:
                     stabilizer = stabilizers.setdefault(
                         hand_name, GestureStabilizer(args.hold_seconds)
                     )
-                    analysis = analyze_hand(landmarks)
+                    analysis = analyze_hand(
+                        landmarks, minor_direction=args.minor_direction
+                    )
                     observation = analysis.gesture
                     if (
                         observation is not None

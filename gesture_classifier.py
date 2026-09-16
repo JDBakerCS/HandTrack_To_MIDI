@@ -85,9 +85,10 @@ POSE_PATTERNS = {
 # These are intentionally named constants because camera testing will likely
 # reveal that one or more thresholds should be adjusted for the user's hands.
 FINGER_EXTENDED_THRESHOLD = 0.55
-VERTICAL_STRENGTH_THRESHOLD = 0.45
-VERTICAL_DOMINANCE_THRESHOLD = 0.60
+DIRECTION_STRENGTH_THRESHOLD = 0.45
+DIRECTION_DOMINANCE_THRESHOLD = 0.60
 VULCAN_GAP_RATIO_THRESHOLD = 1.65
+SUPPORTED_MINOR_DIRECTIONS = ("down", "sideways")
 
 
 # --- Geometry helpers ------------------------------------------------------
@@ -168,7 +169,7 @@ def _finger_extension_scores(landmarks: Sequence[Landmark]) -> Dict[str, float]:
 def _finger_direction(
     landmarks: Sequence[Landmark], extended_fingers: Tuple[str, ...]
 ) -> Tuple[str, float]:
-    """Classify the long fingers as pointing up, down, or sideways."""
+    """Classify the long fingers as pointing up, down, sideways, or diagonal."""
 
     active_fingers = [
         finger_name
@@ -190,20 +191,36 @@ def _finger_direction(
     palm_length = max(
         _distance(landmarks[0], landmarks[9], include_z=False), 0.001
     )
+    horizontal_strength = abs(x_distance) / palm_length
     vertical_strength = abs(y_distance) / palm_length
+    horizontal_dominance = abs(x_distance) / max(
+        abs(x_distance) + abs(y_distance), 0.001
+    )
     vertical_dominance = abs(y_distance) / max(
         abs(x_distance) + abs(y_distance), 0.001
     )
 
     if (
-        vertical_strength < VERTICAL_STRENGTH_THRESHOLD
-        or vertical_dominance < VERTICAL_DOMINANCE_THRESHOLD
+        vertical_strength >= DIRECTION_STRENGTH_THRESHOLD
+        and vertical_dominance >= DIRECTION_DOMINANCE_THRESHOLD
     ):
-        return "Sideways", _clamp(vertical_dominance)
+        direction = "Up" if y_distance < 0.0 else "Down"
+        strength = vertical_strength
+        dominance = vertical_dominance
+    elif (
+        horizontal_strength >= DIRECTION_STRENGTH_THRESHOLD
+        and horizontal_dominance >= DIRECTION_DOMINANCE_THRESHOLD
+    ):
+        # Both screen-left and screen-right count as Sideways. This keeps the
+        # gesture independent of which physical hand is assigned as selector.
+        direction = "Sideways"
+        strength = horizontal_strength
+        dominance = horizontal_dominance
+    else:
+        return "Diagonal", 0.0
 
-    direction = "Up" if y_distance < 0.0 else "Down"
     confidence = (
-        _clamp(vertical_strength / 1.5) + _clamp(vertical_dominance)
+        _clamp(strength / 1.5) + _clamp(dominance)
     ) / 2.0
     return direction, confidence
 
@@ -219,11 +236,17 @@ def _vulcan_gap_ratio(landmarks: Sequence[Landmark]) -> float:
 # --- Public gesture classifier --------------------------------------------
 
 
-def analyze_hand(landmarks: Sequence[Landmark]) -> PoseAnalysis:
-    """Analyze 21 MediaPipe landmarks and classify the project's custom pose."""
+def analyze_hand(
+    landmarks: Sequence[Landmark], minor_direction: str = "down"
+) -> PoseAnalysis:
+    """Analyze landmarks using either downward or sideways minor gestures."""
 
     if len(landmarks) != 21:
         raise ValueError("Expected exactly 21 hand landmarks")
+    if minor_direction not in SUPPORTED_MINOR_DIRECTIONS:
+        raise ValueError(
+            f"minor_direction must be one of: {', '.join(SUPPORTED_MINOR_DIRECTIONS)}"
+        )
 
     extension_scores = _finger_extension_scores(landmarks)
     extended_fingers = tuple(
@@ -252,32 +275,46 @@ def analyze_hand(landmarks: Sequence[Landmark]) -> PoseAnalysis:
         )
 
     gesture: Optional[ChordGesture] = None
-    if degree_and_name is not None and direction in ("Up", "Down"):
+    if degree_and_name is not None:
         degree, pose_name = degree_and_name
-        expected_fingers = set(extended_fingers)
-        pattern_confidence = sum(
-            extension_scores[finger_name]
-            if finger_name in expected_fingers
-            else 1.0 - extension_scores[finger_name]
-            for finger_name in FINGER_ORDER
-        ) / len(FINGER_ORDER)
-        overall_confidence = (
-            pattern_confidence + direction_confidence + gap_confidence
-        ) / 3.0
-        # VI is intentionally inverted because vi is naturally minor in a
-        # major scale and the upward pose is more comfortable to hold.
-        if degree == 6:
-            quality = "Minor" if direction == "Up" else "Major"
-        else:
-            quality = "Major" if direction == "Up" else "Minor"
+        quality: Optional[str] = None
 
-        gesture = ChordGesture(
-            degree=degree,
-            roman_numeral=ROMAN_NUMERALS[degree],
-            quality=quality,
-            pose_name=pose_name,
-            confidence=round(overall_confidence, 2),
-        )
+        # VI intentionally keeps its original exception: up is minor and down
+        # is major. Sideways minor mode only replaces downward minor gestures
+        # for I-V and VII.
+        if degree == 6:
+            if direction == "Up":
+                quality = "Minor"
+            elif direction == "Down":
+                quality = "Major"
+        else:
+            if direction == "Up":
+                quality = "Major"
+            elif (
+                minor_direction == "down" and direction == "Down"
+            ) or (
+                minor_direction == "sideways" and direction == "Sideways"
+            ):
+                quality = "Minor"
+
+        if quality is not None:
+            expected_fingers = set(extended_fingers)
+            pattern_confidence = sum(
+                extension_scores[finger_name]
+                if finger_name in expected_fingers
+                else 1.0 - extension_scores[finger_name]
+                for finger_name in FINGER_ORDER
+            ) / len(FINGER_ORDER)
+            overall_confidence = (
+                pattern_confidence + direction_confidence + gap_confidence
+            ) / 3.0
+            gesture = ChordGesture(
+                degree=degree,
+                roman_numeral=ROMAN_NUMERALS[degree],
+                quality=quality,
+                pose_name=pose_name,
+                confidence=round(overall_confidence, 2),
+            )
 
     return PoseAnalysis(
         extended_fingers=extended_fingers,
