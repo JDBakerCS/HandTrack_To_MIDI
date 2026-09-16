@@ -4,9 +4,9 @@ Status: Draft
 
 ## Development preview and performance mode
 
-Milestones 1 and 2 are implemented in `HandChordGestures.py`. It detects up to
-two hands, classifies the custom I-VII major/minor poses, displays raw and
-stabilized results, and can send voiced MIDI chords from one selector hand.
+Milestones 1 and 2 plus the first Milestone 3 expression control are implemented
+in `HandChordGestures.py`. It detects two hands, sends voiced MIDI chords from
+the selector hand, and maps the other hand's height to a smoothed MIDI CC.
 
 Run the preview from the activated virtual environment:
 
@@ -85,6 +85,45 @@ active notes and sends MIDI all-notes-off before closing the port.
 If LMMS receives no notes, confirm that `Port1` is visible in loopMIDI, restart
 LMMS after creating the port, and reselect `MIDI -> Input -> Port1` on the
 instrument track.
+
+### Expression-hand filter control
+
+By default, the non-selector hand controls MIDI CC74, the conventional
+brightness/filter-cutoff controller. With the default right selector hand, the
+left hand is the expression hand. Raise it for `127` and lower it for `0`. The
+camera overlay shows the current value on a vertical CC74 meter.
+
+LMMS needs a one-time connection between incoming CC74 and the instrument's
+filter cutoff:
+
+1. Open the TripleOscillator instrument and choose a saw or square waveform so
+   filtering is easy to hear.
+2. Open `ENV/LFO`, enable the filter by clicking its title bar/light, and choose
+   a low-pass filter.
+3. Right-click the filter `CUTOFF` knob and select `Connect to controller`.
+4. Select `MIDI controller`, enable `Auto Detect`, then move only the expression
+   hand vertically while the Python application is running.
+5. Hold a chord with the selector hand and raise/lower the expression hand.
+
+The normal performance command enables both chord and expression output:
+
+```powershell
+python HandChordGestures.py --port Port1
+```
+
+Use another CC number when a synth expects a different control:
+
+```powershell
+python HandChordGestures.py --port Port1 --expression-cc 1
+```
+
+Expression output uses exponential smoothing, a two-value dead zone, and a
+30-message-per-second limit. A larger smoothing value responds faster; a
+smaller value moves more gently. For example:
+
+```powershell
+python HandChordGestures.py --port Port1 --expression-smoothing 0.4
+```
 
 ### Harmony preview
 
@@ -208,9 +247,12 @@ live application connects stabilized gestures to its `ChordIntent` interface.
 
 ### Expression hand
 
-Start with a small set of mappings:
+The first implemented mapping is:
 
 - Vertical position -> filter cutoff
+
+Planned mappings include:
+
 - Horizontal position -> pan
 - Finger spread or hand openness -> reverb/delay amount
 - Pinch distance -> effect intensity
@@ -254,6 +296,9 @@ Implementation complete and undergoing camera-and-LMMS musical tuning.
 - Confirm the chords in a DAW or MIDI monitor.
 
 ### Milestone 3: Expression control
+
+Vertical position to smoothed, rate-limited CC74 is implemented and awaiting
+camera-and-LMMS tuning. Remaining controls will be added one at a time.
 
 - Assign one movement to one MIDI CC.
 - Add smoothing and a dead zone to reduce jitter.
