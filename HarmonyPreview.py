@@ -20,7 +20,7 @@ ROMAN_NUMERALS = {
     6: "VI",
     7: "VII",
 }
-SUPPORTED_CHORD_TYPES = ("major", "minor", "dominant7")
+SUPPORTED_CHORD_TYPES = ("major", "minor", "dominant7", "major7", "minor7")
 DEFAULT_PROGRESSION = "1:major,4:major,5:dominant7,1:major"
 
 
@@ -113,13 +113,18 @@ def run(args: argparse.Namespace) -> int:
         print("-" * 72)
 
         for step_number, step in enumerate(args.progression, start=1):
-            is_dominant_seventh = step.chord_type == "dominant7"
+            is_seventh = step.chord_type in ("dominant7", "major7", "minor7")
+            quality = (
+                "minor"
+                if step.chord_type == "minor7"
+                else "major" if is_seventh else step.chord_type
+            )
             intent = ChordIntent(
                 tonic=args.tonic,
                 scale=args.scale,
                 degree=step.degree,
-                quality="major" if is_dominant_seventh else step.chord_type,
-                extension="dominant7" if is_dominant_seventh else None,
+                quality=quality,
+                extension=step.chord_type if is_seventh else None,
                 inversion=None,
                 octave=args.octave,
                 voicing_style=args.voicing,
