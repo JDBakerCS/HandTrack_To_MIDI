@@ -25,6 +25,7 @@ class PinchAnalysis:
 
     index_ratio: float
     middle_ratio: float
+    ring_ratio: float
     modifier: Optional[str]
 
 
@@ -48,7 +49,7 @@ def analyze_seventh_pinch(
     engage_threshold: float = DEFAULT_PINCH_ENGAGE_THRESHOLD,
     release_threshold: float = DEFAULT_PINCH_RELEASE_THRESHOLD,
 ) -> PinchAnalysis:
-    """Recognize thumb-index or thumb-middle pinch using palm-width ratios.
+    """Recognize thumb-index or thumb-middle-ring pinch using palm-width ratios.
 
     An active modifier uses the larger release threshold. This hysteresis keeps
     a held pinch stable even when fingertip landmarks jitter near the boundary.
@@ -65,9 +66,15 @@ def analyze_seventh_pinch(
     thumb_tip = landmarks[4]
     index_ratio = _distance(thumb_tip, landmarks[8]) / palm_width
     middle_ratio = _distance(thumb_tip, landmarks[12]) / palm_width
+    ring_ratio = _distance(thumb_tip, landmarks[16]) / palm_width
+
+    # Dominant 7 deliberately requires both the middle and ring fingertips to
+    # meet the thumb. Using the larger distance means one stray fingertip cannot
+    # make an ordinary thumb-middle movement look like the TMR gesture.
+    tmr_ratio = max(middle_ratio, ring_ratio)
     ratios = {
         QUALITY_SEVENTH_MODIFIER: index_ratio,
-        DOMINANT_SEVENTH_MODIFIER: middle_ratio,
+        DOMINANT_SEVENTH_MODIFIER: tmr_ratio,
     }
 
     if (
@@ -86,6 +93,7 @@ def analyze_seventh_pinch(
     return PinchAnalysis(
         index_ratio=index_ratio,
         middle_ratio=middle_ratio,
+        ring_ratio=ring_ratio,
         modifier=modifier,
     )
 

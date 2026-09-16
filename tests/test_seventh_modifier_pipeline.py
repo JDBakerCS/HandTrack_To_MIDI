@@ -31,11 +31,13 @@ def expression_hand(pinch: str):
     landmarks[4] = Point(0.40, 0.40)
     landmarks[8] = Point(0.25, 0.20)
     landmarks[12] = Point(0.55, 0.18)
+    landmarks[16] = Point(0.70, 0.25)
     if pinch == "index":
         landmarks[8] = Point(0.41, 0.40)
-    elif pinch == "middle":
+    elif pinch == "tmr":
         landmarks[4] = Point(0.50, 0.40)
         landmarks[12] = Point(0.51, 0.40)
+        landmarks[16] = Point(0.49, 0.41)
     return landmarks
 
 
@@ -48,7 +50,7 @@ class SeventhModifierPipelineTests(unittest.TestCase):
         cases = (
             ("index", "Major", "major7", (60, 64, 67, 71)),
             ("index", "Minor", "minor7", (60, 63, 67, 70)),
-            ("middle", "Major", "dominant7", (60, 64, 67, 70)),
+            ("tmr", "Major", "dominant7", (60, 64, 67, 70)),
         )
 
         for pinch, quality, extension, expected_notes in cases:
@@ -74,7 +76,7 @@ class SeventhModifierPipelineTests(unittest.TestCase):
         player = ChordMidiPlayer(output)
         player.play_chord((60, 63, 67))
         output.messages.clear()
-        modifier = analyze_seventh_pinch(expression_hand("middle")).modifier
+        modifier = analyze_seventh_pinch(expression_hand("tmr")).modifier
 
         with self.assertRaises(InvalidChordModifierError):
             chord_intent_from_gesture(

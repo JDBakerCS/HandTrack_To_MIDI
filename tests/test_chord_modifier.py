@@ -25,12 +25,20 @@ def make_expression_hand(pinch: str = "none", scale: float = 1.0):
     landmarks[4] = point(0.40, 0.40)
     landmarks[8] = point(0.25, 0.20)
     landmarks[12] = point(0.55, 0.18)
+    landmarks[16] = point(0.70, 0.25)
 
     if pinch == "index":
         landmarks[8] = point(0.41, 0.40)
     elif pinch == "middle":
         landmarks[4] = point(0.50, 0.40)
         landmarks[12] = point(0.51, 0.40)
+    elif pinch == "ring":
+        landmarks[4] = point(0.50, 0.40)
+        landmarks[16] = point(0.49, 0.40)
+    elif pinch == "tmr":
+        landmarks[4] = point(0.50, 0.40)
+        landmarks[12] = point(0.51, 0.40)
+        landmarks[16] = point(0.49, 0.41)
     elif pinch != "none":
         raise ValueError("Unknown test pinch")
     return landmarks
@@ -41,9 +49,17 @@ class PinchRecognitionTests(unittest.TestCase):
         analysis = analyze_seventh_pinch(make_expression_hand("index"))
         self.assertEqual(QUALITY_SEVENTH_MODIFIER, analysis.modifier)
 
-    def test_thumb_middle_pinch_selects_dominant_seventh(self) -> None:
-        analysis = analyze_seventh_pinch(make_expression_hand("middle"))
+    def test_thumb_middle_ring_pinch_selects_dominant_seventh(self) -> None:
+        analysis = analyze_seventh_pinch(make_expression_hand("tmr"))
         self.assertEqual(DOMINANT_SEVENTH_MODIFIER, analysis.modifier)
+
+    def test_thumb_middle_alone_does_not_select_dominant_seventh(self) -> None:
+        analysis = analyze_seventh_pinch(make_expression_hand("middle"))
+        self.assertIsNone(analysis.modifier)
+
+    def test_thumb_ring_alone_does_not_select_dominant_seventh(self) -> None:
+        analysis = analyze_seventh_pinch(make_expression_hand("ring"))
+        self.assertIsNone(analysis.modifier)
 
     def test_open_hand_selects_no_modifier(self) -> None:
         analysis = analyze_seventh_pinch(make_expression_hand())

@@ -135,7 +135,7 @@ vertical CC74 control:
 | --- | --- | --- |
 | No pinch | Major triad | Minor triad |
 | Thumb to index | Major 7 | Minor 7 |
-| Thumb to middle | Dominant 7 | Invalid; previous chord is retained |
+| Thumb, middle, and ring together | Dominant 7 | Invalid; previous chord is retained |
 
 Pinch distance is normalized by palm width, stabilized for 0.12 seconds, and
 uses different engage/release thresholds to prevent flicker. Brief tracking
@@ -149,8 +149,9 @@ python HandChordGestures.py --port Port1
 ```
 
 The overlay reports `Triad`, `Quality 7`, or `Dominant 7`, along with normalized
-index (`I`) and middle (`M`) pinch distances. If a firm pinch does not engage,
-try slightly larger thresholds:
+index (`I`), middle (`M`), and ring (`R`) pinch distances. Dominant 7 engages
+only when both `M` and `R` are close enough to the thumb. If a firm pinch does
+not engage, try slightly larger thresholds:
 
 ```powershell
 python HandChordGestures.py --port Port1 --pinch-engage 0.38 --pinch-release 0.55
@@ -287,7 +288,7 @@ The implemented mappings are:
 
 - Vertical position -> filter cutoff
 - Thumb-index pinch -> major 7 or minor 7, following the selector quality
-- Thumb-middle pinch -> dominant 7 with a major selector pose
+- Thumb-middle-ring pinch -> dominant 7 with a major selector pose
 
 Planned mappings include:
 

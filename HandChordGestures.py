@@ -541,7 +541,8 @@ def run(args: argparse.Namespace) -> int:
                             f"CC{args.expression_cc} {expression_control.current_value} | "
                             f"7th {MODIFIER_LABELS[stable_modifier]} | "
                             f"pinch I {pinch_analysis.index_ratio:.2f} "
-                            f"M {pinch_analysis.middle_ratio:.2f}"
+                            f"M {pinch_analysis.middle_ratio:.2f} "
+                            f"R {pinch_analysis.ring_ratio:.2f}"
                         )
                     else:
                         status_lines.append(f"{hand_name} [unassigned]")
