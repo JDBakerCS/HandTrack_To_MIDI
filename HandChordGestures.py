@@ -1,8 +1,7 @@
-"""Preview two-hand chord gestures without sending MIDI notes.
+"""Preview or perform two-hand chord gestures.
 
-This is Milestone 1 from the project README. It is intentionally visual-only so
-gesture thresholds can be tested safely before note-on and note-off behavior is
-introduced.
+Without ``--port`` this remains the safe Milestone 1 visual preview. Supplying a
+MIDI output port enables Milestone 2 chord playback through the harmony engine.
 """
 
 import argparse
@@ -14,7 +13,15 @@ from typing import Dict, Optional, Sequence, Set
 import cv2
 import mediapipe as mp
 
-from gesture_classifier import GestureStabilizer, PoseAnalysis, analyze_hand
+from gesture_classifier import (
+    ChordGesture,
+    GestureStabilizer,
+    PoseAnalysis,
+    analyze_hand,
+)
+from gesture_music import chord_intent_from_gesture
+from harmony_engine import VoicingEngine, format_chord, normalize_note_name
+from midi_chord_player import ChordMidiPlayer, open_midi_output
 
 
 # --- Application constants -------------------------------------------------
@@ -57,7 +64,7 @@ LANDMARK_COLORS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Preview two-hand scale-degree gestures without MIDI output."
+        description="Preview gestures or perform their chords through MIDI."
     )
     parser.add_argument("--camera", type=int, default=0, help="Camera device index")
     parser.add_argument(
@@ -69,14 +76,84 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hold-seconds",
         type=float,
-        default=0.25,
-        help="Seconds a pose must remain unchanged before it becomes stable",
+        default=0.15,
+        help="Seconds a pose must remain unchanged (default: 0.15)",
     )
     parser.add_argument(
         "--min-confidence",
         type=float,
-        default=0.65,
-        help="Minimum custom gesture confidence from 0.0 to 1.0",
+        default=0.55,
+        help="Minimum custom gesture confidence from 0.0 to 1.0 (default: 0.55)",
+    )
+    parser.add_argument(
+        "--port",
+        help="MIDI output port; omit this option for visual-only preview",
+    )
+    parser.add_argument(
+        "--channel",
+        type=int,
+        choices=range(1, 17),
+        default=1,
+        metavar="1-16",
+        help="MIDI channel (default: 1)",
+    )
+    parser.add_argument(
+        "--selector-hand",
+        choices=("Left", "Right"),
+        default="Right",
+        help="Hand that selects chords; the other hand is reserved for expression",
+    )
+    parser.add_argument(
+        "--minor-direction",
+        choices=("down", "sideways"),
+        default="sideways",
+        help="Direction used for minor gestures I-V and VII (default: sideways)",
+    )
+    parser.add_argument("--tonic", default="C", help="Tonic note, such as C or F#")
+    parser.add_argument(
+        "--scale",
+        choices=("major", "natural_minor"),
+        default="major",
+        help="Scale used to place degrees I-VII",
+    )
+    parser.add_argument(
+        "--octave",
+        type=int,
+        choices=range(-1, 8),
+        default=4,
+        metavar="-1-7",
+        help="Root octave before automatic inversion (default: 4)",
+    )
+    parser.add_argument(
+        "--voicing",
+        choices=("close", "open"),
+        default="close",
+        help="Chord spacing style (default: close)",
+    )
+    parser.add_argument(
+        "--velocity",
+        type=int,
+        choices=range(1, 128),
+        default=96,
+        metavar="1-127",
+        help="Chord note velocity (default: 96)",
+    )
+    parser.add_argument(
+        "--lowest-note",
+        type=int,
+        default=36,
+        help="Lowest MIDI note allowed in automatic voicings (default: 36)",
+    )
+    parser.add_argument(
+        "--highest-note",
+        type=int,
+        default=96,
+        help="Highest MIDI note allowed in automatic voicings (default: 96)",
+    )
+    parser.add_argument(
+        "--dominant-seven",
+        action="store_true",
+        help="Play the major V gesture as a dominant seventh chord",
     )
     args = parser.parse_args()
 
@@ -84,6 +161,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("--hold-seconds must be non-negative")
     if not 0.0 <= args.min_confidence <= 1.0:
         parser.error("--min-confidence must be between 0.0 and 1.0")
+    if not 0 <= args.lowest_note < args.highest_note <= 127:
+        parser.error("MIDI range must satisfy 0 <= lowest-note < highest-note <= 127")
+    try:
+        args.tonic = normalize_note_name(args.tonic)
+    except ValueError as error:
+        parser.error(str(error))
     return args
 
 
@@ -126,7 +209,9 @@ def _finger_summary(analysis: PoseAnalysis) -> str:
     ) or "none"
 
 
-def draw_status_panel(frame, status_lines: Sequence[str]) -> None:
+def draw_status_panel(
+    frame, status_lines: Sequence[str], heading: str
+) -> None:
     # A dark backing rectangle keeps labels readable over a bright camera feed.
     panel_height = 72 + 28 * len(status_lines)
     overlay = frame.copy()
@@ -135,7 +220,7 @@ def draw_status_panel(frame, status_lines: Sequence[str]) -> None:
 
     cv2.putText(
         frame,
-        "Gesture preview - no MIDI notes are being sent",
+        heading,
         (12, 28),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.65,
@@ -186,7 +271,7 @@ def _gesture_text(analysis: PoseAnalysis) -> str:
     return f"{analysis.gesture.display_name} ({analysis.gesture.confidence:.0%})"
 
 
-def _stable_text(stable_gesture) -> str:
+def _stable_text(stable_gesture: Optional[ChordGesture]) -> str:
     return stable_gesture.display_name if stable_gesture is not None else "waiting"
 
 
@@ -199,24 +284,37 @@ def run(args: argparse.Namespace) -> int:
         print(f"Model file not found: {model_path}", file=sys.stderr)
         return 1
 
-    camera = cv2.VideoCapture(args.camera)
-    if not camera.isOpened():
-        print(f"Camera {args.camera} could not be opened.", file=sys.stderr)
-        return 1
-
-    options = mp.tasks.vision.GestureRecognizerOptions(
-        base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
-        running_mode=mp.tasks.vision.RunningMode.VIDEO,
-        num_hands=2,
-        min_hand_detection_confidence=0.65,
-        min_hand_presence_confidence=0.65,
-        min_tracking_confidence=0.65,
-    )
-    stabilizers: Dict[str, GestureStabilizer] = {}
-    start_time = time.perf_counter()
-    last_timestamp_ms = -1
+    camera = None
+    midi_output = None
+    player: Optional[ChordMidiPlayer] = None
+    resolved_port = ""
 
     try:
+        if args.port:
+            midi_output, resolved_port = open_midi_output(args.port)
+            player = ChordMidiPlayer(midi_output, channel=args.channel)
+            print(f"Opened MIDI output port: {resolved_port}")
+
+        camera = cv2.VideoCapture(args.camera)
+        if not camera.isOpened():
+            print(f"Camera {args.camera} could not be opened.", file=sys.stderr)
+            return 1
+
+        options = mp.tasks.vision.GestureRecognizerOptions(
+            base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
+            running_mode=mp.tasks.vision.RunningMode.VIDEO,
+            num_hands=2,
+            min_hand_detection_confidence=0.65,
+            min_hand_presence_confidence=0.65,
+            min_tracking_confidence=0.65,
+        )
+        stabilizers: Dict[str, GestureStabilizer] = {}
+        voicing_engine = VoicingEngine(args.lowest_note, args.highest_note)
+        last_selector_key = None
+        active_chord_text = "none"
+        start_time = time.perf_counter()
+        last_timestamp_ms = -1
+
         with mp.tasks.vision.GestureRecognizer.create_from_options(options) as recognizer:
             while camera.isOpened():
                 success, frame = camera.read()
@@ -239,6 +337,7 @@ def run(args: argparse.Namespace) -> int:
                 now = time.perf_counter()
                 status_lines = []
                 seen_hands: Set[str] = set()
+                stable_gestures: Dict[str, Optional[ChordGesture]] = {}
 
                 for hand_index, landmarks in enumerate(result.hand_landmarks):
                     hand_name = _hand_name(result, hand_index)
@@ -246,7 +345,9 @@ def run(args: argparse.Namespace) -> int:
                     stabilizer = stabilizers.setdefault(
                         hand_name, GestureStabilizer(args.hold_seconds)
                     )
-                    analysis = analyze_hand(landmarks)
+                    analysis = analyze_hand(
+                        landmarks, minor_direction=args.minor_direction
+                    )
                     observation = analysis.gesture
                     if (
                         observation is not None
@@ -254,10 +355,14 @@ def run(args: argparse.Namespace) -> int:
                     ):
                         observation = None
                     stable_gesture = stabilizer.update(observation, now)
+                    stable_gestures[hand_name] = stable_gesture
 
                     draw_hand(frame, landmarks, hand_name)
+                    hand_role = (
+                        "selector" if hand_name == args.selector_hand else "expression"
+                    )
                     status_lines.append(
-                        f"{hand_name}: raw {_gesture_text(analysis)} | "
+                        f"{hand_name} [{hand_role}]: raw {_gesture_text(analysis)} | "
                         f"stable {_stable_text(stable_gesture)} | "
                         f"fingers {_finger_summary(analysis)} {analysis.direction}"
                     )
@@ -266,18 +371,73 @@ def run(args: argparse.Namespace) -> int:
                 # configured hold period, avoiding stale labels on re-entry.
                 for hand_name, stabilizer in stabilizers.items():
                     if hand_name not in seen_hands:
-                        stabilizer.update(None, now)
+                        stable_gestures[hand_name] = stabilizer.update(None, now)
+
+                # Only the configured selector hand owns harmony. A stable pose
+                # is converted to intent once, voiced once, and sent once.
+                selector_gesture = stable_gestures.get(args.selector_hand)
+                selector_key = (
+                    (selector_gesture.degree, selector_gesture.quality)
+                    if selector_gesture is not None
+                    else None
+                )
+                if player is not None:
+                    if selector_key is None:
+                        if player.stop():
+                            print("Chord off")
+                        last_selector_key = None
+                        active_chord_text = "none"
+                    elif selector_key != last_selector_key:
+                        intent = chord_intent_from_gesture(
+                            selector_gesture,
+                            tonic=args.tonic,
+                            scale=args.scale,
+                            octave=args.octave,
+                            voicing_style=args.voicing,
+                            velocity=args.velocity,
+                            dominant_seventh=args.dominant_seven,
+                        )
+                        notes = voicing_engine.voice(intent)
+                        player.play_chord(notes, velocity=intent.velocity)
+                        last_selector_key = selector_key
+                        active_chord_text = (
+                            f"{selector_gesture.display_name}: {format_chord(notes)}"
+                        )
+                        print(f"Chord on: {active_chord_text} | MIDI {notes}")
 
                 if not status_lines:
                     status_lines.append("No hands detected")
-                draw_status_panel(frame, status_lines)
-                cv2.imshow("Two-Hand Chord Gesture Preview", frame)
+                if player is not None:
+                    status_lines.insert(0, f"Active chord: {active_chord_text}")
+                    heading = (
+                        f"MIDI: {resolved_port} | selector: {args.selector_hand} hand"
+                    )
+                else:
+                    heading = "Gesture preview - no MIDI notes are being sent"
+                draw_status_panel(frame, status_lines, heading)
+                cv2.imshow("Two-Hand Chord Gestures", frame)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     return 0
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"Performance stopped: {error}", file=sys.stderr)
+        return 1
     finally:
-        camera.release()
+        # Panic runs before closing the port so both tracked note-offs and MIDI
+        # all-notes-off reach LMMS even after an exception or camera failure.
+        if player is not None:
+            try:
+                player.panic()
+            except (OSError, RuntimeError) as error:
+                print(f"MIDI cleanup warning: {error}", file=sys.stderr)
+        if midi_output is not None:
+            try:
+                midi_output.close()
+            except (OSError, RuntimeError) as error:
+                print(f"MIDI close warning: {error}", file=sys.stderr)
+        if camera is not None:
+            camera.release()
         cv2.destroyAllWindows()
 
     return 0

@@ -36,9 +36,14 @@ def make_hand(
 ) -> List[Point]:
     """Build a simple landmark hand with known straight and folded fingers."""
 
+    if direction not in ("up", "down", "sideways"):
+        raise ValueError("direction must be up, down, or sideways")
+
     extended = set(extended_fingers)
     landmarks = [Point(0.5, 0.5) for _ in range(21)]
-    is_up = direction == "up"
+    # A sideways fixture begins as an upward hand and is rotated after all
+    # finger geometry is created. Rotation preserves joint-angle test values.
+    is_up = direction != "down"
     landmarks[0] = Point(0.5, 0.82 if is_up else 0.18)
 
     x_positions = dict(FINGER_X)
@@ -68,6 +73,13 @@ def make_hand(
         thumb_points = (0.44, 0.40, 0.36)
     for landmark_index, x_position in zip((2, 3, 4), thumb_points):
         landmarks[landmark_index] = Point(x_position, 0.60 if is_up else 0.40)
+
+    if direction == "sideways":
+        for landmark in landmarks:
+            centered_x = landmark.x - 0.5
+            centered_y = landmark.y - 0.5
+            landmark.x = 0.5 + centered_y
+            landmark.y = 0.5 - centered_x
 
     return landmarks
 
@@ -110,6 +122,65 @@ class GestureClassifierTests(unittest.TestCase):
     def test_closed_hand_is_not_a_chord_gesture(self) -> None:
         analysis = analyze_hand(make_hand(()))
         self.assertIsNone(analysis.gesture)
+
+    def test_degree_three_accepts_a_relaxed_extended_thumb(self) -> None:
+        analysis = analyze_hand(make_hand(("thumb", "index", "middle", "ring")))
+
+        self.assertEqual(
+            ("thumb", "index", "middle", "ring"), analysis.extended_fingers
+        )
+        self.assertIsNotNone(analysis.gesture)
+        self.assertEqual(3, analysis.gesture.degree)
+        self.assertEqual("Major", analysis.gesture.quality)
+
+    def test_sideways_mode_recognizes_minor_chords_except_vi(self) -> None:
+        pose_cases = (
+            (("index",), 1, False),
+            (("index", "middle"), 2, False),
+            (("index", "middle", "ring"), 3, False),
+            (("index", "middle", "ring", "pinky"), 4, False),
+            (("thumb", "index", "middle", "ring", "pinky"), 5, False),
+            (("thumb", "index", "middle", "ring", "pinky"), 7, True),
+        )
+
+        for fingers, degree, vulcan in pose_cases:
+            with self.subTest(degree=degree):
+                analysis = analyze_hand(
+                    make_hand(fingers, "sideways", vulcan),
+                    minor_direction="sideways",
+                )
+                self.assertEqual("Sideways", analysis.direction)
+                self.assertIsNotNone(analysis.gesture)
+                self.assertEqual(degree, analysis.gesture.degree)
+                self.assertEqual("Minor", analysis.gesture.quality)
+
+    def test_sideways_minor_accepts_either_horizontal_direction(self) -> None:
+        left_landmarks = make_hand(("index", "middle"), "sideways")
+        right_landmarks = [
+            Point(1.0 - landmark.x, landmark.y, landmark.z)
+            for landmark in left_landmarks
+        ]
+
+        for landmarks in (left_landmarks, right_landmarks):
+            analysis = analyze_hand(landmarks, minor_direction="sideways")
+            self.assertEqual("Sideways", analysis.direction)
+            self.assertEqual("Minor", analysis.gesture.quality)
+
+    def test_sideways_mode_preserves_the_vi_direction_exception(self) -> None:
+        fingers = ("index", "pinky")
+        up = analyze_hand(make_hand(fingers, "up"), minor_direction="sideways")
+        down = analyze_hand(make_hand(fingers, "down"), minor_direction="sideways")
+        sideways = analyze_hand(
+            make_hand(fingers, "sideways"), minor_direction="sideways"
+        )
+
+        self.assertEqual("Minor", up.gesture.quality)
+        self.assertEqual("Major", down.gesture.quality)
+        self.assertIsNone(sideways.gesture)
+
+    def test_invalid_minor_direction_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            analyze_hand(make_hand(("index",)), minor_direction="diagonal")
 
     def test_wrong_landmark_count_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

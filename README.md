@@ -2,11 +2,11 @@
 
 Status: Draft
 
-## Development preview
+## Development preview and performance mode
 
-Milestone 1 is implemented in `HandChordGestures.py`. It detects up to two hands,
-classifies the custom I-VII major/minor poses, and displays raw and stabilized
-results over the camera feed. It does not send MIDI notes yet.
+Milestones 1 and 2 are implemented in `HandChordGestures.py`. It detects up to
+two hands, classifies the custom I-VII major/minor poses, displays raw and
+stabilized results, and can send voiced MIDI chords from one selector hand.
 
 Run the preview from the activated virtual environment:
 
@@ -14,12 +14,16 @@ Run the preview from the activated virtual environment:
 python HandChordGestures.py
 ```
 
-Press `q` or Escape to close it. If recognition flickers, try a longer hold time
-or a lower confidence threshold while collecting observations:
+Press `q` or Escape to close it. Live testing established responsive defaults
+of `0.15` seconds and `0.55` confidence. If recognition becomes too sensitive,
+try the earlier conservative values:
 
 ```powershell
-python HandChordGestures.py --hold-seconds 0.4 --min-confidence 0.55
+python HandChordGestures.py --hold-seconds 0.25 --min-confidence 0.65
 ```
+
+Omitting `--port` always keeps this visual-only mode, making it useful for
+gesture tuning without producing notes.
 
 The preview color-codes all 21 hand landmarks so joint movement is easier to
 follow:
@@ -30,6 +34,57 @@ follow:
 - Cyan: middle finger
 - Orange: ring finger
 - Pink: pinky finger
+
+### MIDI chord performance
+
+Before starting the camera application:
+
+1. Open loopMIDI, create `Port1`, and leave loopMIDI running.
+2. Start LMMS after the port exists and leave its MIDI interface on `WinMM MIDI`.
+3. Add an instrument such as TripleOscillator to the Song Editor.
+4. On that instrument track, select `MIDI -> Input -> Port1`.
+5. Click the instrument's on-screen piano once to confirm LMMS audio works.
+
+Start C-major chord performance with the right hand as the selector:
+
+```powershell
+python HandChordGestures.py --port Port1
+```
+
+Sideways minor gestures are the default for degrees I-V and VII. Either
+horizontal direction is accepted. To compare them with the original downward
+minor gestures, use:
+
+```powershell
+python HandChordGestures.py --port Port1 --minor-direction down
+```
+
+The friendly `Port1` name also matches the numbered name, such as `Port1 1`,
+that Mido reports on Windows. Use the left hand as the selector when preferred:
+
+```powershell
+python HandChordGestures.py --port Port1 --selector-hand Left
+```
+
+The other detected hand is labeled `expression` and does not send notes yet.
+That separation prevents the future effects hand from accidentally selecting a
+second chord.
+
+Add a dominant seventh to the major V gesture or try open voicings:
+
+```powershell
+python HandChordGestures.py --port Port1 --dominant-seven
+python HandChordGestures.py --port Port1 --voicing open
+```
+
+A held stable pose sends one chord onset. Changing the stable pose releases the
+old notes before starting the new chord. Removing the selector hand releases
+the chord after the configured hold period. Pressing `q` or Escape releases the
+active notes and sends MIDI all-notes-off before closing the port.
+
+If LMMS receives no notes, confirm that `Port1` is visible in loopMIDI, restart
+LMMS after creating the port, and reselect `MIDI -> Input -> Port1` on the
+instrument track.
 
 ### Harmony preview
 
@@ -84,19 +139,21 @@ tucked for poses where it is not part of the pattern.
 
 | Scale degree | Major gesture | Minor gesture |
 | --- | --- | --- |
-| I | Index pointing up | Index pointing down |
-| II | Index and middle pointing up | Index and middle pointing down |
-| III | Index, middle, and ring pointing up | Same fingers pointing down |
-| IV | Four fingers pointing up | Four fingers pointing down |
-| V | Open hand pointing up | Open hand pointing down |
+| I | Index pointing up | Index pointing sideways |
+| II | Index and middle pointing up | Index and middle pointing sideways |
+| III | Index, middle, and ring pointing up | Same fingers pointing sideways |
+| IV | Four fingers pointing up | Four fingers pointing sideways |
+| V | Open hand pointing up | Open hand pointing sideways |
 | VI | Index and pinky pointing down | Index and pinky pointing up |
-| VII | Vulcan hand signal pointing up | Vulcan hand signal pointing down |
+| VII | Vulcan hand signal pointing up | Vulcan hand signal pointing sideways |
 
-For this document, “up” and “down” mean the direction of the fingertips in the
-camera image. This can be revised if palm orientation proves more natural or
-reliable. VI intentionally reverses the usual direction rule: pointing up is
-minor and pointing down is major because vi is naturally minor in a major scale
-and the upward gesture is easier to perform.
+“Up,” “down,” and “sideways” mean fingertip direction in the camera image. Both
+screen-left and screen-right count as sideways. Degree III accepts either `IMR`
+or the relaxed-thumb `TIMR` detected during live testing. The
+`--minor-direction down` option restores the original mapping for comparison.
+VI keeps its intentional exception: pointing up is minor and pointing down is
+major because vi is naturally minor in a major scale and the upward gesture is
+easier to perform.
 
 ## 5. Musical behavior
 
@@ -137,9 +194,8 @@ will be responsible for:
 - Producing close, open, and later instrument-specific voicings
 - Choosing a nearby inversion when automatic voice leading is enabled
 
-The initial harmony branch will implement and test this layer without opening a
-camera or MIDI port. Gesture and MIDI integration will happen only after the
-musical output is verified independently.
+The harmony layer is tested independently of the camera and MIDI port, then the
+live application connects stabilized gestures to its `ChordIntent` interface.
 
 ## 7. Two-hand control model
 
@@ -147,7 +203,7 @@ musical output is verified independently.
 
 - Detect the hand’s identity and landmark positions.
 - Classify the finger pattern.
-- Classify fingertip direction as up or down.
+- Classify fingertip direction as up, down, sideways, or diagonal.
 - Apply confidence, debounce, and hold-time rules before changing chords.
 
 ### Expression hand
@@ -172,7 +228,8 @@ messages are sent.
    MIDI output, and configuration responsibilities.
 4. Keep the existing continuous MIDI script as a reference while building the
    new controller.
-5. Use the loopMIDI port name supplied by the user, currently `Port1 1`.
+5. Use the loopMIDI port name supplied by the user, accepting both `Port1` and
+   Mido's numbered form such as `Port1 1`.
 6. Pass recognized gestures into `ChordIntent` rather than constructing MIDI
    messages inside the camera loop.
 
@@ -186,6 +243,8 @@ messages are sent.
 - Do not send MIDI notes yet.
 
 ### Milestone 2: Chord output
+
+Implementation complete and undergoing camera-and-LMMS musical tuning.
 
 - Build and test `ChordIntent` and the voicing engine first.
 - Start with C major and all seven scale degrees.
@@ -219,7 +278,7 @@ messages are sent.
 
 ## 11. Risks and open questions
 
-- Camera angle and hand rotation may make up/down classification unreliable.
+- Camera angle and hand rotation may make directional classification unreliable.
 - The Vulcan signal must be distinguished from an open hand by its finger gaps.
 - Finger-count poses may be confused during transitions between chords.
 - The best representation for key changes and scales is still undecided.
