@@ -14,6 +14,7 @@ import cv2
 import mediapipe as mp
 
 from chord_modifier import (
+    DEFAULT_MODIFIER_LOSS_SECONDS,
     DEFAULT_PINCH_ENGAGE_THRESHOLD,
     DEFAULT_PINCH_RELEASE_THRESHOLD,
     MODIFIER_LABELS,
@@ -166,6 +167,15 @@ def parse_args() -> argparse.Namespace:
         help="Seconds a seventh pinch must remain stable (default: 0.12)",
     )
     parser.add_argument(
+        "--modifier-loss-seconds",
+        type=float,
+        default=DEFAULT_MODIFIER_LOSS_SECONDS,
+        help=(
+            "Expression-hand dropout grace before returning to triad "
+            "(default: 0.30)"
+        ),
+    )
+    parser.add_argument(
         "--pinch-engage",
         type=float,
         default=DEFAULT_PINCH_ENGAGE_THRESHOLD,
@@ -244,6 +254,8 @@ def parse_args() -> argparse.Namespace:
         )
     if args.modifier_hold_seconds < 0.0:
         parser.error("--modifier-hold-seconds must be non-negative")
+    if args.modifier_loss_seconds < 0.0:
+        parser.error("--modifier-loss-seconds must be non-negative")
     if not 0.0 < args.pinch_engage < args.pinch_release:
         parser.error("Pinch thresholds must satisfy 0 < pinch-engage < pinch-release")
     try:
@@ -553,9 +565,28 @@ def run(args: argparse.Namespace) -> int:
                     if hand_name not in seen_hands:
                         stable_gestures[hand_name] = stabilizer.update(None, now)
 
+                expression_visible = expression_hand in seen_hands
+                if not expression_visible:
+                    stable_modifier = modifier_stabilizer.expire_missing_hand(
+                        now, args.modifier_loss_seconds
+                    )
+
                 # Only the configured selector hand owns harmony. A stable pose
                 # is converted to intent once, voiced once, and sent once.
                 selector_gesture = stable_gestures.get(args.selector_hand)
+                # A modifier belongs to the chord on which it was performed.
+                # If the expression hand has left and the selector changes, do
+                # not carry the old seventh into the newly selected chord.
+                if (
+                    not expression_visible
+                    and stable_modifier is not None
+                    and selector_gesture is not None
+                    and last_selector_key is not None
+                    and (selector_gesture.degree, selector_gesture.quality)
+                    != last_selector_key[:2]
+                ):
+                    modifier_stabilizer.clear()
+                    stable_modifier = None
                 selector_key = (
                     (
                         selector_gesture.degree,

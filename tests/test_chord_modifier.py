@@ -115,6 +115,41 @@ class PinchModifierStabilizerTests(unittest.TestCase):
             stabilizer.update(DOMINANT_SEVENTH_MODIFIER, 1.16),
         )
 
+    def test_short_hand_dropout_retains_modifier(self) -> None:
+        stabilizer = PinchModifierStabilizer(hold_seconds=0.0)
+        stabilizer.update(QUALITY_SEVENTH_MODIFIER, 1.00)
+
+        self.assertEqual(
+            QUALITY_SEVENTH_MODIFIER,
+            stabilizer.expire_missing_hand(1.20, grace_seconds=0.30),
+        )
+
+    def test_long_hand_dropout_returns_to_triad(self) -> None:
+        stabilizer = PinchModifierStabilizer(hold_seconds=0.0)
+        stabilizer.update(QUALITY_SEVENTH_MODIFIER, 1.00)
+
+        self.assertIsNone(
+            stabilizer.expire_missing_hand(1.31, grace_seconds=0.30)
+        )
+        self.assertIsNone(stabilizer.stable_modifier)
+
+    def test_clear_requires_a_new_pinch_hold(self) -> None:
+        stabilizer = PinchModifierStabilizer(hold_seconds=0.10)
+        stabilizer.update(QUALITY_SEVENTH_MODIFIER, 1.00)
+        stabilizer.update(QUALITY_SEVENTH_MODIFIER, 1.10)
+        stabilizer.clear()
+
+        self.assertIsNone(stabilizer.update(QUALITY_SEVENTH_MODIFIER, 2.00))
+        self.assertEqual(
+            QUALITY_SEVENTH_MODIFIER,
+            stabilizer.update(QUALITY_SEVENTH_MODIFIER, 2.10),
+        )
+
+    def test_negative_hand_loss_grace_is_rejected(self) -> None:
+        stabilizer = PinchModifierStabilizer()
+        with self.assertRaises(ValueError):
+            stabilizer.expire_missing_hand(1.0, grace_seconds=-0.1)
+
 
 if __name__ == "__main__":
     unittest.main()

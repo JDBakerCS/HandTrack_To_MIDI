@@ -138,9 +138,10 @@ vertical CC74 control:
 | Thumb, middle, and ring together | Dominant 7 | Invalid; previous chord is retained |
 
 Pinch distance is normalized by palm width, stabilized for 0.12 seconds, and
-uses different engage/release thresholds to prevent flicker. Brief tracking
-loss retains the current modifier; deliberately opening the detected expression
-hand returns the chord to a triad.
+uses different engage/release thresholds to prevent flicker. A tracking dropout
+shorter than 0.30 seconds retains the modifier. Removing the expression hand for
+longer returns the chord to a triad, and changing the selector while that hand
+is absent drops the old modifier immediately.
 
 The normal performance command enables the pinch modifiers automatically:
 
@@ -158,6 +159,8 @@ python HandChordGestures.py --port Port1 --pinch-engage 0.38 --pinch-release 0.5
 ```
 
 If modifiers engage accidentally, use smaller values such as `0.22` and `0.35`.
+The hand-loss grace can also be tuned; for example, use
+`--modifier-loss-seconds 0.5` if brief expression-hand dropouts are common.
 The existing `--dominant-seven` option remains available for automatically
 turning an unmodified major V gesture into V7; an active pinch takes precedence.
 

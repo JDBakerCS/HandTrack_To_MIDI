@@ -34,6 +34,7 @@ MODIFIER_LABELS = {
     QUALITY_SEVENTH_MODIFIER: "Quality 7",
     DOMINANT_SEVENTH_MODIFIER: "Dominant 7",
 }
+DEFAULT_MODIFIER_LOSS_SECONDS = 0.30
 DEFAULT_PINCH_ENGAGE_THRESHOLD = 0.30
 DEFAULT_PINCH_RELEASE_THRESHOLD = 0.45
 
@@ -111,6 +112,7 @@ class PinchModifierStabilizer:
         self._candidate: Optional[str] = None
         self._candidate_since = 0.0
         self._stable: Optional[str] = None
+        self._last_hand_seen_at: Optional[float] = None
 
     @property
     def stable_modifier(self) -> Optional[str]:
@@ -121,10 +123,33 @@ class PinchModifierStabilizer:
 
         if observation not in SUPPORTED_SEVENTH_MODIFIERS:
             raise ValueError("Unsupported seventh modifier observation")
+        self._last_hand_seen_at = timestamp
         if observation != self._candidate:
             self._candidate = observation
             self._candidate_since = timestamp
 
         if timestamp - self._candidate_since >= self.hold_seconds:
             self._stable = self._candidate
+        return self._stable
+
+    def clear(self) -> None:
+        """Return immediately to a triad and discard any pending pinch."""
+
+        self._candidate = None
+        self._candidate_since = 0.0
+        self._stable = None
+        self._last_hand_seen_at = None
+
+    def expire_missing_hand(
+        self, timestamp: float, grace_seconds: float = DEFAULT_MODIFIER_LOSS_SECONDS
+    ) -> Optional[str]:
+        """Clear a modifier after the expression hand exceeds a dropout grace."""
+
+        if grace_seconds < 0.0:
+            raise ValueError("grace_seconds must be non-negative")
+        if (
+            self._last_hand_seen_at is not None
+            and timestamp - self._last_hand_seen_at >= grace_seconds
+        ):
+            self.clear()
         return self._stable
