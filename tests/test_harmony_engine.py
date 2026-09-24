@@ -62,6 +62,20 @@ class ChordConstructionTests(unittest.TestCase):
         self.assertEqual((67, 71, 74, 77), notes)
         self.assertEqual("G4 - B4 - D5 - F5", format_chord(notes))
 
+    def test_c_major_seventh(self) -> None:
+        notes = build_chord(
+            ChordIntent(quality="major", extension="major7")
+        )
+        self.assertEqual((60, 64, 67, 71), notes)
+        self.assertEqual("C4 - E4 - G4 - B4", format_chord(notes))
+
+    def test_c_minor_seventh(self) -> None:
+        notes = build_chord(
+            ChordIntent(quality="minor", extension="minor7")
+        )
+        self.assertEqual((60, 63, 67, 70), notes)
+        self.assertEqual("C4 - D#4 - G4 - A#4", format_chord(notes))
+
     def test_triads_support_both_inversions(self) -> None:
         first = build_chord(ChordIntent(inversion=1))
         second = build_chord(ChordIntent(inversion=2))
@@ -84,6 +98,12 @@ class ChordIntentValidationTests(unittest.TestCase):
     def test_dominant_seventh_requires_major_quality(self) -> None:
         with self.assertRaises(ValueError):
             ChordIntent(quality="minor", extension="dominant7")
+
+    def test_named_sevenths_require_matching_triad_quality(self) -> None:
+        with self.assertRaises(ValueError):
+            ChordIntent(quality="minor", extension="major7")
+        with self.assertRaises(ValueError):
+            ChordIntent(quality="major", extension="minor7")
 
     def test_inversion_must_exist_for_the_chord(self) -> None:
         with self.assertRaises(ValueError):
@@ -144,6 +164,10 @@ class HarmonyPreviewTests(unittest.TestCase):
     def test_invalid_progression_is_rejected(self) -> None:
         with self.assertRaises(ArgumentTypeError):
             parse_progression("8:major")
+
+    def test_major_and_minor_sevenths_parse(self) -> None:
+        steps = parse_progression("1:major7,2:minor7")
+        self.assertEqual(("major7", "minor7"), tuple(s.chord_type for s in steps))
 
 
 if __name__ == "__main__":

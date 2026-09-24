@@ -37,11 +37,11 @@ class GestureMidiPipelineTests(unittest.TestCase):
         self.assertEqual((60, 64, 67), first_notes)
         self.assertEqual((60, 65, 69), second_notes)
         self.assertEqual(
-            ["note_on"] * 3 + ["note_off"] * 3 + ["note_on"] * 3,
+            ["note_on"] * 5 + ["note_off"] * 2,
             [message.type for message in output.messages],
         )
         self.assertEqual(
-            [60, 64, 67, 60, 64, 67, 60, 65, 69],
+            [60, 64, 67, 65, 69, 64, 67],
             [message.note for message in output.messages],
         )
 

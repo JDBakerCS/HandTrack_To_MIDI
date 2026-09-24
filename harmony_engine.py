@@ -54,7 +54,17 @@ TRIAD_INTERVALS = {
     "major": (0, 4, 7),
     "minor": (0, 3, 7),
 }
-SUPPORTED_EXTENSIONS = (None, "dominant7")
+SEVENTH_INTERVALS = {
+    "dominant7": 10,
+    "major7": 11,
+    "minor7": 10,
+}
+EXTENSION_QUALITIES = {
+    "dominant7": "major",
+    "major7": "major",
+    "minor7": "minor",
+}
+SUPPORTED_EXTENSIONS = (None, *SEVENTH_INTERVALS)
 SUPPORTED_VOICINGS = ("close", "open")
 SUPPORTED_ARTICULATIONS = ("sustain", "legato", "staccato")
 
@@ -89,8 +99,11 @@ class ChordIntent:
             raise ValueError(f"Unsupported chord quality: {self.quality}")
         if self.extension not in SUPPORTED_EXTENSIONS:
             raise ValueError(f"Unsupported chord extension: {self.extension}")
-        if self.extension == "dominant7" and self.quality != "major":
-            raise ValueError("dominant7 requires a major triad quality")
+        required_quality = EXTENSION_QUALITIES.get(self.extension)
+        if required_quality is not None and self.quality != required_quality:
+            raise ValueError(
+                f"{self.extension} requires a {required_quality} triad quality"
+            )
         if self.voicing_style not in SUPPORTED_VOICINGS:
             raise ValueError(f"Unsupported voicing style: {self.voicing_style}")
         if self.articulation not in SUPPORTED_ARTICULATIONS:
@@ -98,7 +111,7 @@ class ChordIntent:
         if not 1 <= self.velocity <= 127:
             raise ValueError("velocity must be between 1 and 127")
 
-        voice_count = 4 if self.extension == "dominant7" else 3
+        voice_count = 4 if self.extension is not None else 3
         if self.inversion is not None and not 0 <= self.inversion < voice_count:
             raise ValueError(
                 f"inversion must be between 0 and {voice_count - 1}, or None"
@@ -173,8 +186,8 @@ def build_chord(intent: ChordIntent) -> Tuple[int, ...]:
 
     root = chord_root(intent)
     intervals = list(TRIAD_INTERVALS[intent.quality])
-    if intent.extension == "dominant7":
-        intervals.append(10)
+    if intent.extension is not None:
+        intervals.append(SEVENTH_INTERVALS[intent.extension])
 
     notes = tuple(root + interval for interval in intervals)
     inversion = intent.inversion if intent.inversion is not None else 0
@@ -253,7 +266,7 @@ class VoicingEngine:
         self._previous_notes = None
 
     def _candidate_voicings(self, intent: ChordIntent) -> Tuple[Tuple[int, ...], ...]:
-        voice_count = 4 if intent.extension == "dominant7" else 3
+        voice_count = 4 if intent.extension is not None else 3
         inversions = (
             range(voice_count)
             if intent.inversion is None

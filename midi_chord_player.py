@@ -110,12 +110,22 @@ class ChordMidiPlayer:
         if validated_notes == self._active_notes:
             return False
 
-        # Release every old voice before starting the new chord. This makes
-        # gesture changes deterministic and avoids accumulating stuck notes.
-        self.stop()
+        previous_notes = self._active_notes
+        previous_note_set = set(previous_notes)
+        next_note_set = set(validated_notes)
+        notes_to_start = tuple(
+            note for note in validated_notes if note not in previous_note_set
+        )
+        notes_to_stop = tuple(
+            note for note in previous_notes if note not in next_note_set
+        )
+
+        # Keep common tones sounding instead of reattacking the whole chord.
+        # New voices start before obsolete voices stop, avoiding an all-notes-
+        # off gap that can produce a click in synths with sharp envelopes.
         started_notes: List[int] = []
         try:
-            for note in validated_notes:
+            for note in notes_to_start:
                 self.output.send(
                     Message(
                         "note_on",
@@ -125,15 +135,26 @@ class ChordMidiPlayer:
                     )
                 )
                 started_notes.append(note)
+            for note in notes_to_stop:
+                self.output.send(
+                    Message(
+                        "note_off",
+                        channel=self.channel,
+                        note=note,
+                        velocity=0,
+                    )
+                )
         except Exception:
-            # Remember partially-started notes so stop() can release them before
-            # the original output error is allowed to propagate.
-            self._active_notes = tuple(started_notes)
+            # Include old and newly started voices so stop() can safely release
+            # everything after a partial transition.
+            self._active_notes = tuple(
+                dict.fromkeys((*previous_notes, *started_notes))
+            )
             self.stop()
             raise
 
         self._active_notes = validated_notes
-        return True
+        return bool(notes_to_start or notes_to_stop)
 
     def stop(self) -> bool:
         """Release the active chord, returning whether notes needed releasing."""

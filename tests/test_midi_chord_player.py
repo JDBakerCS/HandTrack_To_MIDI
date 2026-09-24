@@ -54,17 +54,34 @@ class ChordMidiPlayerTests(unittest.TestCase):
         self.assertFalse(changed)
         self.assertEqual(3, len(self.output.messages))
 
-    def test_chord_change_releases_old_notes_before_new_notes(self) -> None:
+    def test_chord_change_preserves_shared_notes_without_reattacking(self) -> None:
         self.player.play_chord((60, 64, 67))
         self.output.messages.clear()
 
         self.player.play_chord((60, 65, 69))
 
         self.assertEqual(
-            ["note_off", "note_off", "note_off", "note_on", "note_on", "note_on"],
+            ["note_on", "note_on", "note_off", "note_off"],
             [message.type for message in self.output.messages],
         )
+        self.assertEqual(
+            [65, 69, 64, 67],
+            [message.note for message in self.output.messages],
+        )
         self.assertEqual((60, 65, 69), self.player.active_notes)
+
+    def test_adding_and_removing_seventh_only_changes_extension_voice(self) -> None:
+        self.player.play_chord((60, 64, 67))
+        self.output.messages.clear()
+
+        self.player.play_chord((60, 64, 67, 71))
+        self.assertEqual(["note_on"], [m.type for m in self.output.messages])
+        self.assertEqual([71], [m.note for m in self.output.messages])
+
+        self.output.messages.clear()
+        self.player.play_chord((60, 64, 67))
+        self.assertEqual(["note_off"], [m.type for m in self.output.messages])
+        self.assertEqual([71], [m.note for m in self.output.messages])
 
     def test_stop_releases_active_notes_once(self) -> None:
         self.player.play_chord((60, 64, 67))

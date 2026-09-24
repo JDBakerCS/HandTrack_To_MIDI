@@ -3,7 +3,11 @@
 import unittest
 
 from gesture_classifier import ChordGesture
-from gesture_music import chord_intent_from_gesture
+from gesture_music import (
+    DOMINANT_SEVENTH_MODIFIER,
+    QUALITY_SEVENTH_MODIFIER,
+    chord_intent_from_gesture,
+)
 
 
 def make_gesture(degree: int, quality: str) -> ChordGesture:
@@ -57,6 +61,47 @@ class GestureMusicTests(unittest.TestCase):
         self.assertEqual("dominant7", dominant.extension)
         self.assertIsNone(minor_five.extension)
         self.assertIsNone(major_four.extension)
+
+    def test_quality_seventh_modifier_follows_the_selector_quality(self) -> None:
+        major = chord_intent_from_gesture(
+            make_gesture(1, "Major"),
+            seventh_modifier=QUALITY_SEVENTH_MODIFIER,
+        )
+        minor = chord_intent_from_gesture(
+            make_gesture(2, "Minor"),
+            seventh_modifier=QUALITY_SEVENTH_MODIFIER,
+        )
+
+        self.assertEqual("major7", major.extension)
+        self.assertEqual("minor7", minor.extension)
+
+    def test_dominant_modifier_works_on_any_major_degree(self) -> None:
+        intent = chord_intent_from_gesture(
+            make_gesture(2, "Major"),
+            seventh_modifier=DOMINANT_SEVENTH_MODIFIER,
+        )
+        self.assertEqual("dominant7", intent.extension)
+
+    def test_dominant_modifier_rejects_a_minor_pose(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires a major pose"):
+            chord_intent_from_gesture(
+                make_gesture(2, "Minor"),
+                seventh_modifier=DOMINANT_SEVENTH_MODIFIER,
+            )
+
+    def test_explicit_modifier_overrides_automatic_v7(self) -> None:
+        intent = chord_intent_from_gesture(
+            make_gesture(5, "Major"),
+            dominant_seventh=True,
+            seventh_modifier=QUALITY_SEVENTH_MODIFIER,
+        )
+        self.assertEqual("major7", intent.extension)
+
+    def test_unknown_modifier_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            chord_intent_from_gesture(
+                make_gesture(1, "Major"), seventh_modifier="mystery"
+            )
 
 
 if __name__ == "__main__":

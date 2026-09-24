@@ -6,7 +6,8 @@ Status: Draft
 
 Milestones 1 and 2 plus the first Milestone 3 expression control are implemented
 in `HandChordGestures.py`. It detects two hands, sends voiced MIDI chords from
-the selector hand, and maps the other hand's height to a smoothed MIDI CC.
+the selector hand, maps the other hand's height to a smoothed MIDI CC, and uses
+expression-hand pinches to add seventh-chord extensions.
 
 Run the preview from the activated virtual environment:
 
@@ -125,6 +126,44 @@ smaller value moves more gently. For example:
 python HandChordGestures.py --port Port1 --expression-smoothing 0.4
 ```
 
+### Seventh-chord pinch modifiers
+
+The expression hand can change the held selector chord without giving up its
+vertical CC74 control:
+
+| Expression-hand shape | Major selector pose | Minor selector pose |
+| --- | --- | --- |
+| No pinch | Major triad | Minor triad |
+| Thumb to index | Major 7 | Minor 7 |
+| Thumb, middle, and ring together | Dominant 7 | Invalid; previous chord is retained |
+
+Pinch distance is normalized by palm width, stabilized for 0.12 seconds, and
+uses different engage/release thresholds to prevent flicker. A tracking dropout
+shorter than 0.30 seconds retains the modifier. Removing the expression hand for
+longer returns the chord to a triad, and changing the selector while that hand
+is absent drops the old modifier immediately.
+
+The normal performance command enables the pinch modifiers automatically:
+
+```powershell
+python HandChordGestures.py --port Port1
+```
+
+The overlay reports `Triad`, `Quality 7`, or `Dominant 7`, along with normalized
+index (`I`), middle (`M`), and ring (`R`) pinch distances. Dominant 7 engages
+only when both `M` and `R` are close enough to the thumb. If a firm pinch does
+not engage, try slightly larger thresholds:
+
+```powershell
+python HandChordGestures.py --port Port1 --pinch-engage 0.38 --pinch-release 0.55
+```
+
+If modifiers engage accidentally, use smaller values such as `0.22` and `0.35`.
+The hand-loss grace can also be tuned; for example, use
+`--modifier-loss-seconds 0.5` if brief expression-hand dropouts are common.
+The existing `--dominant-seven` option remains available for automatically
+turning an unmodified major V gesture into V7; an active pinch takes precedence.
+
 ### Harmony preview
 
 `HarmonyPreview.py` prints chord notes and automatic inversions without opening
@@ -135,7 +174,7 @@ python HarmonyPreview.py
 ```
 
 Use `DEGREE:TYPE` steps to review another progression. Supported chord types are
-`major`, `minor`, and `dominant7`:
+`major`, `minor`, `dominant7`, `major7`, and `minor7`:
 
 ```powershell
 python HarmonyPreview.py --tonic D --progression 1:major,6:minor,4:major,5:dominant7
@@ -200,7 +239,8 @@ easier to perform.
 - Convert the selected scale degree into a chord using a configurable chord
   formula and octave.
 - Initially support major and minor triads.
-- Add diminished, seventh, suspended, and extended chords later.
+- Major, minor, dominant-seven, major-seven, and minor-seven chords are
+  supported; diminished, suspended, and larger extensions come later.
 - When the gesture changes, turn off the previous chord before turning on the
   new chord.
 - Send an all-notes-off or equivalent cleanup message when the application
@@ -247,15 +287,16 @@ live application connects stabilized gestures to its `ChordIntent` interface.
 
 ### Expression hand
 
-The first implemented mapping is:
+The implemented mappings are:
 
 - Vertical position -> filter cutoff
+- Thumb-index pinch -> major 7 or minor 7, following the selector quality
+- Thumb-middle-ring pinch -> dominant 7 with a major selector pose
 
 Planned mappings include:
 
 - Horizontal position -> pan
 - Finger spread or hand openness -> reverb/delay amount
-- Pinch distance -> effect intensity
 - Wrist rotation -> modulation rate
 
 All continuous values should be smoothed and rate-limited before MIDI CC
@@ -297,8 +338,9 @@ Implementation complete and undergoing camera-and-LMMS musical tuning.
 
 ### Milestone 3: Expression control
 
-Vertical position to smoothed, rate-limited CC74 is implemented and awaiting
-camera-and-LMMS tuning. Remaining controls will be added one at a time.
+Vertical position to smoothed CC74 and stable seventh-chord pinch modifiers are
+implemented and awaiting camera-and-LMMS tuning. Remaining controls will be
+added one at a time.
 
 - Assign one movement to one MIDI CC.
 - Add smoothing and a dead zone to reduce jitter.
@@ -319,6 +361,8 @@ camera-and-LMMS tuning. Remaining controls will be added one at a time.
 - Changing gestures does not leave stuck MIDI notes.
 - A DAW or MIDI monitor receives the expected chord notes on `Port1 1`.
 - Moving the expression hand changes at least one effect smoothly.
+- Expression-hand pinches select major7, minor7, and dominant7 without stuck
+  notes or rapid chord flicker.
 - Pressing `q` or Escape closes the camera and MIDI connection safely.
 
 ## 11. Risks and open questions
