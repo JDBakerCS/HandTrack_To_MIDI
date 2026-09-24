@@ -183,6 +183,9 @@ python HarmonyPreview.py --tonic D --progression 1:major,6:minor,4:major,5:domin
 Compare close and open spacing with `--voicing close` or `--voicing open`. The
 preview shows both note names and raw MIDI note numbers for human review.
 
+<img width="797" height="885" alt="image" src="https://github.com/user-attachments/assets/23175ef7-82cc-4e64-89c7-fa370c70248d" />
+
+
 ## 1. Product idea
 
 Use two hands in front of a webcam to control musical chords and sound effects.
